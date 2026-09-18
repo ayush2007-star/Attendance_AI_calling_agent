@@ -41,7 +41,7 @@ The reusable dependency is `require_permission(...)` in `app/api/dependencies.py
 ## Attendance Import Flow
 
 ```text
-.xlsx upload
+.xlsx/.xls/.csv/.pdf/.docx upload
   -> extension and size validation
   -> dynamic header/date detection
   -> row normalization
@@ -53,7 +53,7 @@ The reusable dependency is `require_permission(...)` in `app/api/dependencies.py
   -> import summary response
 ```
 
-The parser accepts variable date columns and preserves the college-provided `Tot.(%)` value. Date-wise records are still stored for reporting and future analytics. A summary stores the percentage, date period, source type, and import batch.
+The parser accepts Excel, CSV, PDF tables, and DOCX tables with variable date columns and preserves the college-provided `Tot.(%)` value. Date-wise records are still stored for reporting and future analytics. A summary stores the percentage, date period, source type, and import batch. Uploads are limited to 10 MB.
 
 The parser does not infer approved leave from arbitrary attendance markers. Leave semantics must be implemented explicitly after the college policy is confirmed.
 
@@ -151,7 +151,7 @@ The active development environment uses Python 3.13.7 and `backend/.venv`.
 
 ## Current Limitations
 
-- The Excel service currently supports `.xlsx`; `.xls` is not enabled.
+- Attendance imports currently support `.xlsx`, `.xls`, `.csv`, `.pdf` tables, and `.docx` tables. Legacy binary `.doc` files are not supported.
 - Import files are parsed in the request path; large-scale production deployment should enqueue imports.
 - Provider adapters and real telecom credentials are intentionally not implemented.
 - Follow-up worker execution needs a long-running worker or queue deployment.

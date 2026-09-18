@@ -25,7 +25,7 @@ The architecture must support:
     and B.Tech.
 -   Staff users with restricted permissions/scopes.
 -   Individual and bulk student-data updates.
--   Attendance Excel imports with variable numbers of date columns.
+-   Attendance imports from Excel, CSV, PDF tables, and DOCX tables with variable numbers of date columns.
 -   Attendance percentage as the primary campaign eligibility value.
 -   Attendance dates retained because they are required for leave,
     reporting, scheduling and future analytics/ML.
@@ -641,9 +641,9 @@ Never silently overwrite unrelated fields.
 
 ------------------------------------------------------------------------
 
-# 12. Attendance Excel Import
+# 12. Attendance File Import
 
-The college Excel currently appears to contain:
+The college attendance file currently appears to contain:
 
 ``` text
 S.No
@@ -659,6 +659,11 @@ NF
 
 The exact column names must be detected from the actual production file
 when available.
+
+Supported upload formats are `.xlsx`, `.xls`, `.csv`, `.pdf` tables, and
+`.docx` tables. Legacy binary `.doc` files are not supported. The backend
+normalizes each supported table format before applying the same validation
+and student-matching rules.
 
 ## Important
 
@@ -1483,7 +1488,7 @@ Mandatory:
 
 ------------------------------------------------------------------------
 
-# 33. Excel Import Safety
+# 33. Attendance Import Safety
 
 Import must have:
 
@@ -1526,7 +1531,7 @@ Test:
 -   bulk updates
 -   academic history
 -   parent/contact changes
--   Excel validation
+        -   Attendance file validation for Excel, CSV, PDF, and DOCX inputs
 -   attendance percentage
 -   threshold changes
 -   leave approval
@@ -2013,7 +2018,7 @@ Never make a breaking change silently.
 ``` text
 Student Data + Academic History
         +
-Attendance Excel
+Attendance File (Excel / CSV / PDF / DOCX)
         ↓
 Validation + Attendance Snapshot
         ↓
