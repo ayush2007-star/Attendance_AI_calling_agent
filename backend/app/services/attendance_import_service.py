@@ -1,5 +1,6 @@
 from datetime import date
 from io import BytesIO
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -13,7 +14,10 @@ from app.models.attendance_summary import AttendanceSummary
 from app.models.student import Student
 from app.models.user import User
 from app.schemas.attendance_import import AttendanceImportCreate
-from app.services.attendance_excel_parser import parse_attendance_workbook
+from app.services.attendance_file_parser import (
+    SUPPORTED_ATTENDANCE_EXTENSIONS,
+    parse_attendance_file,
+)
 from app.services.class_service import get_class
 
 
@@ -73,10 +77,14 @@ def process_attendance_upload(
             detail="Attendance file exceeds the 10 MB limit",
         )
 
-    if not file_name.lower().endswith(".xlsx"):
+    file_extension = Path(file_name).suffix.lower()
+    if file_extension not in SUPPORTED_ATTENDANCE_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only .xlsx attendance files are supported",
+            detail=(
+                "Unsupported attendance file format. Supported formats: "
+                + ", ".join(sorted(SUPPORTED_ATTENDANCE_EXTENSIONS))
+            ),
         )
 
     if class_id is None and uploaded_by.role != "SUPER_ADMIN":
@@ -94,7 +102,13 @@ def process_attendance_upload(
                 detail="Selected class does not exist or is inactive",
             )
 
-    parsed = parse_attendance_workbook(BytesIO(file_content))
+    try:
+        parsed = parse_attendance_file(BytesIO(file_content), file_name)
+    except (ValueError, OSError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
     period_dates = [
         attendance_date
         for row in parsed.rows
@@ -105,7 +119,7 @@ def process_attendance_upload(
 
     import_batch = AttendanceImportBatch(
         file_name=file_name,
-        file_type="xlsx",
+        file_type=file_extension.removeprefix("."),
         attendance_date=attendance_date,
         class_id=class_id,
         total_rows=parsed.total_rows,
@@ -140,7 +154,7 @@ def process_attendance_upload(
                 attendance_percentage=row.college_percentage,
                 period_start=period_start,
                 period_end=period_end,
-                source_type="COLLEGE_EXCEL",
+                source_type=f"COLLEGE_{file_extension.removeprefix('.').upper()}",
                 calculation_method="COLLEGE_PROVIDED_TOTAL",
             )
         )
@@ -161,7 +175,7 @@ def process_attendance_upload(
                 student_id=student.id,
                 attendance_date=row_date,
                 status=normalized_status,
-                source_type="EXCEL",
+                source_type=file_extension.removeprefix(".").upper(),
                 source_reference=str(import_batch.id),
                 import_batch_id=import_batch.id,
             )

@@ -513,11 +513,11 @@ function ImportsPage() {
   const startImport = () => { if (!file) return; setProcessing(true); setDone(false); setTimeout(() => { setProcessing(false); setDone(true); }, 1200); };
   return (
     <>
-      <PageHeader title="Attendance Imports" subtitle="Upload and validate Excel attendance data" actions={<button className="secondary-button"><Download size={17} />Import History</button>} />
+      <PageHeader title="Attendance Imports" subtitle="Upload and validate attendance data" actions={<button className="secondary-button"><Download size={17} />Import History</button>} />
       <div className="two-grid">
         <div className="card upload-card">
-          <div className="upload-icon"><FileSpreadsheet size={30} /></div><h3>Upload Attendance File</h3><p>Supported format: Excel (.xlsx, .xls)</p>
-          <label className="dropzone"><UploadCloud size={28} /><strong>{file ? file.name : "Choose an Excel file"}</strong><span>{file ? "File selected" : "Click to browse from your computer"}</span><input type="file" accept=".xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)} /></label>
+          <div className="upload-icon"><FileSpreadsheet size={30} /></div><h3>Upload Attendance File</h3><p>Supported formats: Excel, CSV, PDF, and Word (.xlsx, .xls, .csv, .pdf, .docx)</p>
+          <label className="dropzone"><UploadCloud size={28} /><strong>{file ? file.name : "Choose an attendance file"}</strong><span>{file ? "File selected" : "Click to browse from your computer"}</span><input type="file" accept=".xlsx,.xls,.csv,.pdf,.docx" onChange={(e) => setFile(e.target.files?.[0] || null)} /></label>
           <button className="primary-button full" onClick={startImport} disabled={!file || processing}>{processing ? <><RefreshCw size={17} className="spin" />Processing...</> : <><Upload size={17} />Start Import</>}</button>
           {done && <div className="success-box"><CheckCircle2 size={18} /><div><strong>Import completed</strong><span>186 valid rows processed successfully.</span></div></div>}
         </div>
