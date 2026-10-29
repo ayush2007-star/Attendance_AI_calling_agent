@@ -1,4 +1,6 @@
-import React, { useMemo, useState } from "react";
+import "./App.css";
+import loginArt from "./c11.jpeg";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   LayoutDashboard,
   Users,
@@ -21,6 +23,7 @@ import {
   ChevronDown,
   Plus,
   Eye,
+  EyeOff,
   Pencil,
   ArrowLeft,
   Save,
@@ -48,17 +51,102 @@ import {
   SlidersHorizontal,
   Sparkles,
   Bot,
+  GraduationCap,
+  BookOpen,
+  Building2,
+  FileText,
+  LogOut,
+  UserCheck,
+  CheckCircle,
 } from "lucide-react";
 
+
+const ROLE_CONFIG = {
+  superadmin: {
+    label: "Director",
+    subtitle: "Institution Director",
+    color: "purple",
+  },
+  admin: {
+    label: "HOD",
+    subtitle: "Head of Department",
+    color: "blue",
+  },
+  teacher: {
+    label: "Faculty",
+    subtitle: "Faculty Portal",
+    color: "green",
+  },
+  student: {
+    label: "Student",
+    subtitle: "Student Portal",
+    color: "orange",
+  },
+};
+
+const demoUsers = {
+  superadmin: {
+    name: "Shantanu Mishra",
+    username: "director",
+    department: "All Departments",
+    section: "All Sections",
+  },
+  admin: {
+    name: "Dr. Priya Sharma",
+    username: "hod",
+    department: "Computer Science",
+    section: "All Sections",
+  },
+  teacher: {
+    name: "Rahul Verma",
+    username: "faculty",
+    department: "Computer Science",
+    section: "CSE-A",
+  },
+  student: {
+    name: "Aarav Sharma",
+    username: "student",
+    department: "Computer Science",
+    section: "CSE-A",
+  },
+};
+
+const initialLeaveApplications = [
+  {
+    id: "LV001",
+    studentId: "STU001",
+    student: "Aarav Sharma",
+    department: "Computer Science",
+    section: "CSE-A",
+    from: "2026-10-02",
+    to: "2026-10-03",
+    reason: "Family function",
+    status: "Pending",
+    appliedOn: "01 Oct 2026",
+  },
+  {
+    id: "LV002",
+    studentId: "STU002",
+    student: "Ananya Singh",
+    department: "Computer Science",
+    section: "CSE-A",
+    from: "2026-09-28",
+    to: "2026-09-29",
+    reason: "Medical appointment",
+    status: "Approved",
+    appliedOn: "27 Sep 2026",
+  },
+];
+
 const initialStudents = [
-  { id: "STU001", name: "Aarav Sharma", phone: "9876543210", branch: "CSE", year: "3rd Year", semester: "6th", attendance: 91, status: "Eligible" },
-  { id: "STU002", name: "Ananya Singh", phone: "9876543211", branch: "CSE", year: "2nd Year", semester: "4th", attendance: 86, status: "Eligible" },
-  { id: "STU003", name: "Rohan Verma", phone: "9876543212", branch: "AI/ML", year: "3rd Year", semester: "6th", attendance: 73, status: "Not Eligible" },
-  { id: "STU004", name: "Priya Gupta", phone: "9876543213", branch: "ECE", year: "1st Year", semester: "2nd", attendance: 94, status: "Eligible" },
-  { id: "STU005", name: "Aditya Mishra", phone: "9876543214", branch: "CSE", year: "2nd Year", semester: "4th", attendance: 68, status: "Not Eligible" },
-  { id: "STU006", name: "Sneha Yadav", phone: "9876543215", branch: "AI/ML", year: "2nd Year", semester: "4th", attendance: 82, status: "Eligible" },
-  { id: "STU007", name: "Kunal Patel", phone: "9876543216", branch: "ME", year: "3rd Year", semester: "6th", attendance: 77, status: "Eligible" },
-  { id: "STU008", name: "Neha Agarwal", phone: "9876543217", branch: "CSE", year: "1st Year", semester: "2nd", attendance: 89, status: "Eligible" },
+  { id: "STU001", name: "Aarav Sharma", phone: "9876543210", branch: "CSE", department: "Computer Science", section: "CSE-A", year: "3rd Year", semester: "6th", attendance: 91, status: "Eligible" },
+  { id: "STU002", name: "Ananya Singh", phone: "9876543211", branch: "CSE", department: "Computer Science", section: "CSE-A", year: "2nd Year", semester: "4th", attendance: 86, status: "Eligible" },
+  { id: "STU003", name: "Rohan Verma", phone: "9876543212", branch: "AI/ML", department: "AI & Machine Learning", section: "AI-A", year: "3rd Year", semester: "6th", attendance: 73, status: "Not Eligible" },
+  { id: "STU004", name: "Priya Gupta", phone: "9876543213", branch: "ECE", department: "Electronics", section: "ECE-A", year: "1st Year", semester: "2nd", attendance: 94, status: "Eligible" },
+  { id: "STU005", name: "Aditya Mishra", phone: "9876543214", branch: "CSE", department: "Computer Science", section: "CSE-A", year: "2nd Year", semester: "4th", attendance: 68, status: "Not Eligible" },
+  { id: "STU006", name: "Sneha Yadav", phone: "9876543215", branch: "AI/ML", department: "AI & Machine Learning", section: "AI-A", year: "2nd Year", semester: "4th", attendance: 82, status: "Eligible" },
+  { id: "STU007", name: "Kunal Patel", phone: "9876543216", branch: "ME", department: "Mechanical", section: "ME-A", year: "3rd Year", semester: "6th", attendance: 77, status: "Eligible" },
+  { id: "STU008", name: "Neha Agarwal", phone: "9876543217", branch: "Computer Science", department: "Computer Science", section: "CSE-B", year: "1st Year", semester: "2nd", attendance: 89, status: "Eligible" },
 ];
 
 const menuSections = [
@@ -189,14 +277,484 @@ function FormSelect({ label, value, onChange, children }) {
   );
 }
 
+
+function getMenuSections(role) {
+  const common = [
+    {
+      title: "MAIN",
+      items: [
+        { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      ],
+    },
+  ];
+
+  if (role === "student") {
+    common[0].items.push(
+      { id: "student-attendance", label: "My Attendance", icon: ClipboardCheck },
+      { id: "student-history", label: "Attendance History", icon: History },
+      { id: "leave", label: "Apply Leave", icon: FileText },
+    );
+    common.push({
+      title: "ACCOUNT",
+      items: [
+        { id: "notifications", label: "Notifications", icon: Bell },
+        { id: "profile", label: "Profile", icon: UserRound },
+      ],
+    });
+    return common;
+  }
+
+  // Faculty Portal: section-scoped academic work and attendance upload.
+  if (role === "teacher") {
+    common[0].items.push(
+      { id: "students", label: "My Students", icon: Users },
+      { id: "attendance", label: "Attendance", icon: ClipboardCheck },
+      { id: "imports", label: "Attendance Upload", icon: Upload },
+      { id: "leave", label: "Leave Applications", icon: FileText },
+      { id: "calls", label: "AI Calls", icon: Phone },
+      { id: "reports", label: "Reports", icon: BarChart3 },
+    );
+    common.push({
+      title: "ACCOUNT",
+      items: [
+        { id: "notifications", label: "Notifications", icon: Bell },
+        { id: "profile", label: "Profile", icon: UserRound },
+      ],
+    });
+    return common;
+  }
+
+  // HOD Portal: department is fixed by the assigned scope.
+  if (role === "admin") {
+    common[0].items.push(
+      { id: "students", label: "Department Students", icon: Users },
+      { id: "attendance", label: "Attendance", icon: ClipboardCheck },
+      { id: "leave", label: "Leave Applications", icon: FileText },
+      { id: "imports", label: "Attendance Imports", icon: Upload },
+      { id: "campaigns", label: "Campaigns", icon: Megaphone },
+      { id: "calls", label: "AI Calls", icon: Phone },
+      { id: "reports", label: "Department Reports", icon: BarChart3 },
+    );
+    common.push(
+      {
+        title: "ACADEMIC MANAGEMENT",
+        items: [
+          { id: "sections", label: "Sections", icon: BookOpen },
+          { id: "faculty", label: "Faculty Management", icon: Users },
+        ],
+      },
+      {
+        title: "ACCOUNT",
+        items: [
+          { id: "notifications", label: "Notifications", icon: Bell },
+          { id: "profile", label: "Profile", icon: UserRound },
+        ],
+      }
+    );
+    return common;
+  }
+
+  // Director Portal: institution-wide control.
+  common[0].items.push(
+    { id: "students", label: "All Students", icon: Users },
+    { id: "attendance", label: "Attendance", icon: ClipboardCheck },
+    { id: "leave", label: "All Leave Applications", icon: FileText },
+    { id: "imports", label: "Imports", icon: Upload },
+    { id: "campaigns", label: "Campaigns", icon: Megaphone },
+    { id: "calls", label: "AI Calls", icon: Phone },
+    { id: "conversations", label: "Conversations", icon: MessageSquare },
+    { id: "followups", label: "Follow-ups", icon: CheckSquare },
+    { id: "reports", label: "Global Reports", icon: BarChart3 },
+  );
+  common.push(
+    {
+      title: "INSTITUTION MANAGEMENT",
+      items: [
+        { id: "departments", label: "Departments", icon: Building2 },
+        { id: "sections", label: "Sections", icon: BookOpen },
+        { id: "hods", label: "HOD Management", icon: GraduationCap },
+        { id: "faculty", label: "Faculty Management", icon: Users },
+        { id: "roles", label: "Roles & Permissions", icon: ShieldCheck },
+        { id: "audit", label: "Audit Logs", icon: FileClock },
+        { id: "settings", label: "System Settings", icon: Settings },
+      ],
+    },
+    {
+      title: "ACCOUNT",
+      items: [
+        { id: "notifications", label: "Notifications", icon: Bell },
+        { id: "profile", label: "Profile", icon: UserRound },
+      ],
+    }
+  );
+  return common;
+}
+
+function LoginPage({ onLogin }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(true);
+  const [error, setError] = useState("");
+
+  const handleLogin = (event) => {
+    event.preventDefault();
+    setError("");
+
+    const enteredUsername = username.trim().toLowerCase();
+    const matchedRole = Object.keys(demoUsers).find((key) => {
+      const user = demoUsers[key];
+      return user.username.toLowerCase() === enteredUsername;
+    });
+
+    if (!matchedRole || password !== "123456") {
+      setError("Invalid demo credentials. Check your username and password.");
+      return;
+    }
+
+    onLogin(matchedRole);
+  };
+
+  return (
+    <main className="att-login">
+      <section className="att-login-left att-login-art-panel">
+        <div className="att-login-art">
+          <img
+            src={loginArt}
+            alt="Attendance AI Agent Login"
+            className="att-login-reference-image"
+          />
+        </div>
+      </section>
+
+      <section className="att-login-right">
+        <div className="att-login-card">
+          <p className="att-login-welcome">Welcome Back</p>
+          <h2>Sign in to your account</h2>
+          <p className="att-login-description">Access your dashboard and manage attendance, campaigns, and more.</p>
+
+          <form onSubmit={handleLogin}>
+            <label className="att-login-label" htmlFor="att-login-username">Employee ID or Username</label>
+            <div className="att-login-input">
+              <UserRound size={20} />
+              <input id="att-login-username" type="text" placeholder="Employee ID or Username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required />
+            </div>
+
+            <label className="att-login-label" htmlFor="att-login-password">Password</label>
+            <div className="att-login-input">
+              <Lock size={20} />
+              <input id="att-login-password" type={showPassword ? "text" : "password"} placeholder="Password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+              <button type="button" className="att-login-eye" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide password" : "Show password"}>
+                {showPassword ? <Eye size={20} /> : <EyeOff size={20} />}
+              </button>
+            </div>
+
+            <div className="att-login-options">
+              <label><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />Remember me</label>
+              <button type="button" onClick={() => setError("Please contact your administrator to reset your password.")}>Forgot Password?</button>
+            </div>
+
+            {error && <div className="att-login-error" role="alert">{error}</div>}
+
+            <button type="submit" className="att-login-submit"><span>→</span>Login</button>
+          </form>
+
+          <div className="att-login-divider"><span /><ShieldCheck size={21} /><span /></div>
+          <div className="att-login-security"><span>Secure</span><i>•</i><span>Role Based Access</span><i>•</i><span>Powered by AI</span></div>
+        </div>
+        <p className="att-login-mobile-footer">AttendAI · Smarter Attendance, Better Communication</p>
+      </section>
+    </main>
+  );
+}
+
+function RoleDashboard({ role, user, students, navigate, leaveApplications }) {
+  const scopedStudents =
+    role === "superadmin"
+      ? students
+      : students.filter((s) => {
+          if (role === "student") return s.id === "STU001";
+          if (role === "teacher") return s.department === user.department && s.section === user.section;
+          return s.department === user.department;
+        });
+
+  if (role === "student") {
+    const me = scopedStudents[0] || students[0];
+    return (
+      <>
+        <div className="welcome-banner">
+          <div>
+            <span className="eyebrow">STUDENT PORTAL</span>
+            <h1>Hi, {user.name.split(" ")[0]} 👋</h1>
+            <p>Track your attendance and submit leave applications from one place.</p>
+          </div>
+          <div className="banner-orb"><GraduationCap size={30} /></div>
+        </div>
+        <PageHeader title="Student Dashboard" subtitle={`${user.department} • ${user.section}`} />
+        <div className="stats-grid">
+          <StatCard icon={ClipboardCheck} label="My Attendance" value={`${me.attendance}%`} note="Current semester" tone="green" />
+          <StatCard icon={Target} label="Eligibility" value={me.status} note="75% threshold" tone="blue" />
+          <StatCard icon={FileText} label="Pending Leaves" value={leaveApplications.filter((x) => x.studentId === me.id && x.status === "Pending").length} note="Awaiting approval" tone="purple" />
+          <StatCard icon={Bell} label="Notifications" value="3" note="2 unread" tone="orange" />
+        </div>
+        <div className="two-grid">
+          <div className="card">
+            <div className="card-head"><div><h3>My Academic Details</h3><p>Current record</p></div><UserRound size={19} /></div>
+            <DetailRow label="Student ID" value={me.id} />
+            <DetailRow label="Department" value={me.department} />
+            <DetailRow label="Section" value={me.section} />
+            <DetailRow label="Semester" value={me.semester} />
+          </div>
+          <div className="card">
+            <div className="card-head"><div><h3>Quick Actions</h3><p>Student services</p></div></div>
+            <div className="quick-actions">
+              <button onClick={() => navigate("leave")}><FileText size={18} />Apply Leave</button>
+              <button onClick={() => navigate("student-attendance")}><ClipboardCheck size={18} />View Attendance</button>
+              <button onClick={() => navigate("notifications")}><Bell size={18} />Notifications</button>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  const pendingLeaves = leaveApplications.filter((x) => x.status === "Pending" && (role === "superadmin" || x.department === user.department)).length;
+
+  return (
+    <>
+      <div className="welcome-banner">
+        <div>
+          <span className="eyebrow">{ROLE_CONFIG[role].label.toUpperCase()} • ATTENDAI</span>
+          <h1>Good evening, {user.name.split(" ")[0]} 👋</h1>
+          <p>{role === "admin" ? "Manage your department, sections, faculty, attendance and student services from one focused HOD portal." : role === "teacher" ? "Manage your assigned section, update attendance, review leave requests and access AI calling tools." : "Manage institution-wide departments, HODs, faculty, attendance and AI communication from one place."}</p>
+        </div>
+        <div className="banner-orb"><Sparkles size={30} /></div>
+      </div>
+      <PageHeader title={`${ROLE_CONFIG[role].label} Dashboard`} subtitle={`${user.department} • ${user.section}`} />
+      <div className="stats-grid">
+        <StatCard icon={Users} label={role === "superadmin" ? "Total Students" : "Students in Scope"} value={scopedStudents.length} note="Current scope" tone="blue" />
+        <StatCard icon={ClipboardCheck} label="Average Attendance" value={scopedStudents.length ? `${Math.round(scopedStudents.reduce((a, s) => a + s.attendance, 0) / scopedStudents.length)}%` : "0%"} note="Current period" tone="green" />
+        <StatCard icon={FileText} label="Pending Leaves" value={pendingLeaves} note="Needs action" tone="purple" />
+        <StatCard icon={PhoneCall} label="Calls Completed" value={role === "superadmin" ? "124" : "38"} note="This period" tone="orange" />
+      </div>
+      <div className="three-grid">
+        <div className="card">
+          <div className="card-head"><div><h3>Current Scope</h3><p>Access assigned to you</p></div><ShieldCheck size={19} /></div>
+          <div className="scope-box"><span>Role</span><strong>{ROLE_CONFIG[role].label}</strong></div>
+          <div className="scope-box"><span>Department</span><strong>{user.department}</strong></div>
+          <div className="scope-box"><span>Section</span><strong>{user.section}</strong></div>
+        </div>
+        <div className="card">
+          <div className="card-head"><div><h3>Leave Applications</h3><p>Latest requests</p></div><FileText size={19} /></div>
+          {leaveApplications.slice(0, 3).map((x) => (
+            <div className="activity-item" key={x.id}>
+              <div className="activity-icon"><FileText size={16} /></div>
+              <div><strong>{x.student}</strong><span>{x.reason} • {x.status}</span></div>
+            </div>
+          ))}
+        </div>
+        <div className="card">
+          <div className="card-head"><div><h3>Quick Actions</h3><p>Common tasks</p></div></div>
+          <div className="quick-actions">
+            <button onClick={() => navigate("students")}><Users size={18} />Students</button>
+            <button onClick={() => navigate("attendance")}><ClipboardCheck size={18} />Attendance</button>
+            <button onClick={() => navigate("leave")}><FileText size={18} />Leave Applications</button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function LeavePage({ role, user, students, leaveApplications, setLeaveApplications }) {
+  const [form, setForm] = useState({ from: "", to: "", reason: "" });
+
+  const visible =
+    role === "superadmin"
+      ? leaveApplications
+      : role === "admin"
+      ? leaveApplications.filter((x) => x.department === user.department)
+      : role === "teacher"
+      ? leaveApplications.filter((x) => x.department === user.department && x.section === user.section)
+      : leaveApplications.filter((x) => x.studentId === "STU001");
+
+  const submitLeave = () => {
+    if (!form.from || !form.to || !form.reason) return;
+    const me = students.find((s) => s.id === "STU001") || students[0];
+    setLeaveApplications((prev) => [
+      {
+        id: `LV${String(prev.length + 1).padStart(3, "0")}`,
+        studentId: me.id,
+        student: me.name,
+        department: me.department || user.department,
+        section: me.section || user.section,
+        from: form.from,
+        to: form.to,
+        reason: form.reason,
+        status: "Pending",
+        appliedOn: "Today",
+      },
+      ...prev,
+    ]);
+    setForm({ from: "", to: "", reason: "" });
+  };
+
+  const updateStatus = (id, status) => {
+    setLeaveApplications((prev) => prev.map((x) => x.id === id ? { ...x, status } : x));
+  };
+
+  return (
+    <>
+      <PageHeader title={role === "student" ? "Apply Leave" : "Leave Applications"} subtitle={role === "student" ? "Submit and track your leave requests" : "Review leave requests within your access scope"} />
+      {role === "student" && (
+        <div className="card form-card leave-form-card">
+          <div className="card-head"><div><h3>New Leave Application</h3><p>Send your request to the authorized faculty/admin.</p></div><FileText size={19} /></div>
+          <div className="form-grid">
+            <FormInput label="From Date" type="date" value={form.from} onChange={(v) => setForm((p) => ({ ...p, from: v }))} />
+            <FormInput label="To Date" type="date" value={form.to} onChange={(v) => setForm((p) => ({ ...p, to: v }))} />
+            <div className="form-field full-field"><span>Reason</span><textarea value={form.reason} onChange={(e) => setForm((p) => ({ ...p, reason: e.target.value }))} placeholder="Enter reason for leave..." /></div>
+          </div>
+          <div className="form-actions"><button className="primary-button" onClick={submitLeave}><Save size={17} />Submit Leave</button></div>
+        </div>
+      )}
+
+      <div className="card table-card">
+        <div className="card-head"><div><h3>{role === "student" ? "My Leave History" : "Leave Request Queue"}</h3><p>{visible.length} applications</p></div></div>
+        {visible.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Student</th><th>Section</th><th>Leave Dates</th><th>Reason</th><th>Status</th>{role !== "student" && <th>Action</th>}</tr></thead>
+              <tbody>
+                {visible.map((x) => (
+                  <tr key={x.id}>
+                    <td><strong>{x.student}</strong><span className="table-sub">{x.studentId}</span></td>
+                    <td>{x.section}</td>
+                    <td>{x.from} → {x.to}</td>
+                    <td>{x.reason}</td>
+                    <td><span className={statusClass(x.status)}>{x.status}</span></td>
+                    {role !== "student" && (
+                      <td>
+                        {x.status === "Pending" ? (
+                          <div className="row-actions">
+                            <button className="approve-action" onClick={() => updateStatus(x.id, "Approved")} title="Approve"><CheckCircle size={16} /></button>
+                            <button className="reject-action" onClick={() => updateStatus(x.id, "Rejected")} title="Reject"><XCircle size={16} /></button>
+                          </div>
+                        ) : <span className="completed-text"><CheckCircle2 size={16} />Processed</span>}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <EmptyState icon={FileText} title="No leave applications" text="There are no requests in your current scope." />}
+      </div>
+    </>
+  );
+}
+
+function SimpleManagementPage({ title, subtitle, type, role, user }) {
+  const data = {
+    departments: [
+      ["Computer Science", "CSE", "CSE-A, CSE-B", "12"],
+      ["AI & Machine Learning", "AI/ML", "AI-A", "8"],
+      ["Electronics", "ECE", "ECE-A", "7"],
+      ["Mechanical", "ME", "ME-A", "6"],
+    ],
+    sections: [
+      ["CSE-A", "Computer Science", "3rd Year", "42"],
+      ["CSE-B", "Computer Science", "1st Year", "38"],
+      ["AI-A", "AI & Machine Learning", "3rd Year", "31"],
+      ["ECE-A", "Electronics", "1st Year", "36"],
+    ],
+    hods: [
+      ["Dr. Priya Sharma", "Computer Science", "CSE-A, CSE-B", "Active"],
+      ["Dr. Neha Kapoor", "AI & Machine Learning", "AI-A", "Active"],
+      ["Dr. Amit Verma", "Electronics", "ECE-A", "Active"],
+    ],
+    faculty: [
+      ["Rahul Verma", "Computer Science", "CSE-A", "Active"],
+      ["Priya Sharma", "Computer Science", "CSE-B", "Active"],
+      ["Amit Singh", "AI & Machine Learning", "AI-A", "Active"],
+      ["Kunal Patel", "Electronics", "ECE-A", "Active"],
+    ],
+  }[type] || [];
+
+  const scopedData = role === "admin" && user?.department
+    ? data.filter((row) => row[1] === user.department)
+    : data;
+
+  const addLabel = type === "departments"
+    ? "Department"
+    : type === "sections"
+      ? "Section"
+      : type === "hods"
+        ? "HOD"
+        : "Faculty";
+
+  const columns = type === "departments"
+    ? ["Department", "Code", "Sections", "Faculty"]
+    : type === "sections"
+      ? ["Section", "Department", "Year", "Students"]
+      : [type === "hods" ? "HOD Name" : "Faculty Name", "Department", "Section Scope", "Status"];
+
+  return (
+    <>
+      <PageHeader
+        title={title}
+        subtitle={subtitle}
+        actions={<button className="primary-button"><Plus size={17} />Add {addLabel}</button>}
+      />
+      <div className="card table-card">
+        <div className="card-head">
+          <div>
+            <h3>{title}</h3>
+            <p>{role === "admin" ? `${user.department} department scope` : "Manage academic access by department and section"}</p>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+            <tbody>
+              {scopedData.map((row) => (
+                <tr key={row[0]}>
+                  {row.map((cell, i) => (
+                    <td key={i}>
+                      {i === 0 ? <strong>{cell}</strong> : i === row.length - 1 && (cell === "Active" || cell === "Inactive") ? <span className={statusClass(cell)}>{cell}</span> : cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [students, setStudents] = useState(initialStudents);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [studentMode, setStudentMode] = useState(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [role, setRole] = useState("superadmin");
+  const [leaveApplications, setLeaveApplications] = useState(initialLeaveApplications);
+
+  const user = role ? demoUsers[role] : null;
+  const menuSections = role ? getMenuSections(role) : [];
+  const navLabels = Object.fromEntries(
+    menuSections.flatMap((section) => section.items.map((item) => [item.id, item.label]))
+  );
 
   const navigate = (page) => {
+    if (page === "students-add") {
+      setCurrentPage("students");
+      setStudentMode("add");
+      setSelectedStudent(null);
+      return;
+    }
     setCurrentPage(page);
     setStudentMode(null);
     setSelectedStudent(null);
@@ -217,6 +775,17 @@ function App() {
     setSelectedStudent(null);
   };
 
+  const logout = () => {
+    setRole(null);
+    setCurrentPage("dashboard");
+    setNotificationsOpen(false);
+  };
+
+  if (!role) return <LoginPage onLogin={(selectedRole) => {
+    setRole(selectedRole);
+    setCurrentPage("dashboard");
+  }} />;
+
   const pageTitle = studentMode
     ? studentMode === "add"
       ? "Add Student"
@@ -236,21 +805,20 @@ function App() {
           </div>
         </div>
 
+        <div className="sidebar-role-card">
+          <div className="role-avatar"><ShieldCheck size={17} /></div>
+          <div><strong>{ROLE_CONFIG[role].label}</strong><span>{user.department}</span></div>
+        </div>
+
         <div className="sidebar-menu">
           {menuSections.map((section) => (
             <div className="menu-section" key={section.title}>
               <div className="menu-section-title">{section.title}</div>
               {section.items.map((item) => {
                 const Icon = item.icon;
-                const active =
-                  currentPage === item.id ||
-                  (item.id === "students" && currentPage === "students");
+                const active = currentPage === item.id || (item.id === "students" && currentPage === "students");
                 return (
-                  <button
-                    key={item.id}
-                    className={`sidebar-item ${active ? "active" : ""}`}
-                    onClick={() => navigate(item.id)}
-                  >
+                  <button key={item.id} className={`sidebar-item ${active ? "active" : ""}`} onClick={() => navigate(item.id)}>
                     <Icon size={18} strokeWidth={2} />
                     <span>{item.label}</span>
                   </button>
@@ -261,70 +829,105 @@ function App() {
         </div>
 
         <div className="sidebar-bottom">
-          <div className="system-status">
-            <span className="status-dot"></span>
-            <span>System Online</span>
-          </div>
+          <div className="system-status"><span className="status-dot"></span><span>System Online</span></div>
           <button className="sidebar-user" onClick={() => navigate("profile")}>
-            <div className="user-avatar">SM</div>
-            <div className="user-info">
-              <strong>Shantanu Mishra</strong>
-              <span>Administrator</span>
-            </div>
+            <div className="user-avatar">{initials(user.name)}</div>
+            <div className="user-info"><strong>{user.name}</strong><span>{ROLE_CONFIG[role].label}</span></div>
             <ChevronDown size={15} />
           </button>
+          <button className="sidebar-logout" onClick={logout}><LogOut size={16} />Logout</button>
         </div>
       </aside>
 
       <main className="main-area">
         <header className="topbar">
-          <div className="breadcrumb">
-            <span>AttendAI</span>
-            <span>/</span>
-            <strong>{pageTitle}</strong>
-          </div>
+          <div className="breadcrumb"><span>AttendAI</span><span>/</span><strong>{pageTitle}</strong></div>
           <div className="topbar-right">
+            ```jsx
+<div className="role-switcher">
+  <label htmlFor="role-switch">View Dashboard:</label>
+  <select
+    id="role-switch"
+    value={role}
+    onChange={(e) => {
+      setRole(e.target.value);
+      setCurrentPage("dashboard");
+      setSelectedStudent(null);
+      setStudentMode(null);
+    }}
+  >
+    <option value="superadmin">Super Admin</option>
+    <option value="admin">HOD</option>
+    <option value="teacher">Faculty</option>
+    <option value="student">Student</option>
+  </select>
+</div>
+```
             <div className="notification-wrap">
               <button className="icon-button" onClick={() => setNotificationsOpen((v) => !v)}>
-                <Bell size={20} />
-                <span className="notification-dot"></span>
+                <Bell size={20} /><span className="notification-dot"></span>
               </button>
               {notificationsOpen && (
                 <div className="notification-popover">
                   <div className="popover-head"><strong>Notifications</strong><span>3 new</span></div>
-                  <div className="notification-item"><BellRing size={17} /><div><strong>Import completed</strong><span>Attendance file processed successfully.</span></div></div>
+                  <div className="notification-item"><BellRing size={17} /><div><strong>Leave request update</strong><span>Your latest request is pending.</span></div></div>
                   <div className="notification-item"><PhoneOff size={17} /><div><strong>Call failed</strong><span>One call needs a retry.</span></div></div>
                   <div className="notification-item"><CheckCircle2 size={17} /><div><strong>Follow-up due</strong><span>2 follow-ups are pending.</span></div></div>
                 </div>
               )}
             </div>
             <div className="top-user">
-              <div className="top-avatar">SM</div>
-              <div><strong>Shantanu Mishra</strong><span>Administrator</span></div>
+              <div className="top-avatar">{initials(user.name)}</div>
+              <div><strong>{user.name}</strong><span>{ROLE_CONFIG[role].label} • {user.department}</span></div>
               <ChevronDown size={16} />
             </div>
           </div>
         </header>
 
         <section className="page-content">
-          {currentPage === "dashboard" && <Dashboard students={students} navigate={navigate} />}
-          {currentPage === "students" && !studentMode && <StudentsPage students={students} openStudent={openStudent} navigate={navigate} />}
-          {currentPage === "students" && studentMode === "details" && <StudentDetails student={selectedStudent} onBack={() => setStudentMode(null)} onEdit={() => setStudentMode("edit")} />}
-          {currentPage === "students" && (studentMode === "add" || studentMode === "edit") && (
-            <StudentForm student={selectedStudent} mode={studentMode} onBack={() => setStudentMode(null)} onSave={saveStudent} />
+          {currentPage === "dashboard" && <RoleDashboard role={role} user={user} students={students} navigate={navigate} leaveApplications={leaveApplications} />}
+
+          {currentPage === "students" && role !== "student" && !studentMode && (
+            <StudentsPage students={
+              role === "superadmin" ? students :
+              role === "teacher" ? students.filter((s) => s.department === user.department && s.section === user.section) :
+              students.filter((s) => s.department === user.department)
+            } openStudent={openStudent} navigate={navigate} />
           )}
-          {currentPage === "attendance" && <AttendancePage students={students} />}
-          {currentPage === "imports" && <ImportsPage />}
-          {currentPage === "campaigns" && <CampaignsPage students={students} />}
-          {currentPage === "calls" && <CallsPage />}
-          {currentPage === "conversations" && <ConversationsPage />}
-          {currentPage === "followups" && <FollowUpsPage />}
-          {currentPage === "reports" && <ReportsPage />}
-          {currentPage === "users" && <UsersPage />}
-          {currentPage === "roles" && <RolesPage />}
-          {currentPage === "audit" && <AuditLogsPage />}
-          {currentPage === "settings" && <SettingsPage />}
+          {currentPage === "students" && role !== "student" && studentMode === "details" && <StudentDetails student={selectedStudent} onBack={() => setStudentMode(null)} onEdit={() => setStudentMode("edit")} />}
+          {currentPage === "students" && role !== "student" && (studentMode === "add" || studentMode === "edit") && <StudentForm student={selectedStudent} mode={studentMode} onBack={() => setStudentMode(null)} onSave={saveStudent} />}
+
+          {currentPage === "attendance" && <AttendancePage students={role === "superadmin" ? students : students.filter((s) => role === "teacher" ? s.department === user.department && s.section === user.section : s.department === user.department)} />}
+          {currentPage === "student-attendance" && <AttendancePage students={students.filter((s) => s.id === "STU001")} />}
+          {currentPage === "student-history" && <StudentDetails student={students.find((s) => s.id === "STU001")} onBack={() => navigate("dashboard")} onEdit={() => {}} />}
+
+          {currentPage === "imports" && role !== "student" && <ImportsPage role={role} user={user} />}
+          {currentPage === "campaigns" && role !== "teacher" && role !== "student" && <CampaignsPage students={students} />}
+          {currentPage === "calls" && role !== "student" && <CallsPage />}
+          {currentPage === "conversations" && role === "superadmin" && <ConversationsPage />}
+          {currentPage === "followups" && role === "superadmin" && <FollowUpsPage />}
+          {currentPage === "reports" && role !== "student" && <ReportsPage />}
+
+          {currentPage === "leave" && <LeavePage role={role} user={user} students={students} leaveApplications={leaveApplications} setLeaveApplications={setLeaveApplications} />}
+
+          {currentPage === "departments" && role === "superadmin" && <SimpleManagementPage title="Departments" subtitle="Manage institution departments and their academic scope" type="departments" role={role} user={user} />}
+          {currentPage === "sections" && (role === "superadmin" || role === "admin") && <SimpleManagementPage title="Sections" subtitle={role === "admin" ? "Manage sections within your department" : "Manage department-wise sections"} type="sections" role={role} user={user} />}
+          
+          
+          {currentPage === "hods" && role === "superadmin" && <SimpleManagementPage title="HOD Management" subtitle="Assign HODs to departments and their sections" type="hods" role={role} user={user} />}
+          {currentPage === "faculty" && (role === "superadmin" || role === "admin") && <SimpleManagementPage title="Faculty Management" subtitle={role === "admin" ? "Manage faculty within your department and section" : "Manage faculty members and department-wise assignments"} type="faculty" role={role} user={user} />}
+
+          {currentPage === "users" && role === "admin" && <UsersPage />}
+          {currentPage === "roles" && role === "superadmin" && <RolesPage />}
+          {currentPage === "audit" && role !== "teacher" && role !== "student" && <AuditLogsPage />}
+          {currentPage === "settings" && role !== "teacher" && role !== "student" && <SettingsPage />}
           {currentPage === "profile" && <ProfilePage />}
+          {currentPage === "notifications" && <NotificationsPage role={role} />}
+
+          {["users", "roles", "audit", "settings", "hods", "faculty"].includes(currentPage) &&
+            ((role === "teacher" || role === "student") || (currentPage === "roles" && role !== "superadmin") || (currentPage === "users" && role !== "admin") || (currentPage === "hods" && role !== "superadmin") || (currentPage === "faculty" && role !== "superadmin" && role !== "admin")) && (
+              <EmptyState icon={ShieldCheck} title="Access restricted" text="Your role does not have permission to open this module." />
+            )}
         </section>
       </main>
     </div>
@@ -506,30 +1109,108 @@ function AttendancePage({ students }) {
   );
 }
 
-function ImportsPage() {
+function ImportsPage({ role, user }) {
   const [file, setFile] = useState(null);
   const [processing, setProcessing] = useState(false);
   const [done, setDone] = useState(false);
-  const startImport = () => { if (!file) return; setProcessing(true); setDone(false); setTimeout(() => { setProcessing(false); setDone(true); }, 1200); };
+  const [department, setDepartment] = useState(role === "superadmin" ? "Computer Science" : user?.department || "Computer Science");
+  const [section, setSection] = useState(role === "teacher" ? (user?.section || "CSE-A") : "CSE-A");
+  const [period, setPeriod] = useState("October 2026");
+
+  const departmentSections = {
+    "Computer Science": ["CSE-A", "CSE-B"],
+    "AI & Machine Learning": ["AI-A"],
+    "Electronics": ["ECE-A"],
+    "Mechanical": ["ME-A"],
+  };
+
+  const availableSections = departmentSections[department] || ["CSE-A"];
+
+  useEffect(() => {
+    if (!availableSections.includes(section)) setSection(availableSections[0]);
+  }, [department]);
+
+  const startImport = () => {
+    if (!file || !section) return;
+    setProcessing(true);
+    setDone(false);
+    setTimeout(() => { setProcessing(false); setDone(true); }, 1200);
+  };
+
+  const fixedDepartment = role === "admin" || role === "teacher";
+  const fixedSection = role === "teacher";
+
   return (
     <>
-      <PageHeader title="Attendance Imports" subtitle="Upload and validate Excel attendance data" actions={<button className="secondary-button"><Download size={17} />Import History</button>} />
-      <div className="two-grid">
-        <div className="card upload-card">
-          <div className="upload-icon"><FileSpreadsheet size={30} /></div><h3>Upload Attendance File</h3><p>Supported format: Excel (.xlsx, .xls)</p>
-          <label className="dropzone"><UploadCloud size={28} /><strong>{file ? file.name : "Choose an Excel file"}</strong><span>{file ? "File selected" : "Click to browse from your computer"}</span><input type="file" accept=".xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)} /></label>
-          <button className="primary-button full" onClick={startImport} disabled={!file || processing}>{processing ? <><RefreshCw size={17} className="spin" />Processing...</> : <><Upload size={17} />Start Import</>}</button>
-          {done && <div className="success-box"><CheckCircle2 size={18} /><div><strong>Import completed</strong><span>186 valid rows processed successfully.</span></div></div>}
+      <PageHeader
+        title={role === "teacher" ? "Attendance Upload" : "Attendance Imports"}
+        subtitle={role === "teacher" ? "Upload attendance for your assigned section" : "Upload and validate section-wise Excel attendance data"}
+        actions={<button className="secondary-button"><Download size={17} />Import History</button>}
+      />
+
+      <div className="card form-card attendance-import-scope">
+        <div className="card-head">
+          <div><h3>Attendance Scope</h3><p>Select where this attendance file belongs before importing.</p></div>
+          <ClipboardCheck size={19} />
         </div>
-        <div className="card">
-          <div className="card-head"><div><h3>Import Summary</h3><p>Latest processed file</p></div><Database size={19} /></div>
-          <div className="import-stat"><span>Total Rows</span><strong>200</strong></div><div className="import-stat"><span>Valid Rows</span><strong>186</strong></div><div className="import-stat"><span>Invalid Rows</span><strong>8</strong></div><div className="import-stat"><span>Duplicates</span><strong>6</strong></div>
+        <div className="form-grid">
+          <FormSelect label="Department" value={department} onChange={setDepartment}>
+            {fixedDepartment ? <option>{user?.department || "Computer Science"}</option> : <>
+              <option>Computer Science</option>
+              <option>AI & Machine Learning</option>
+              <option>Electronics</option>
+              <option>Mechanical</option>
+            </>}
+          </FormSelect>
+          <FormSelect label="Section" value={section} onChange={setSection}>
+            {(fixedSection ? [user?.section || "CSE-A"] : availableSections).map((s) => <option key={s}>{s}</option>)}
+          </FormSelect>
+          <FormSelect label="Attendance Period" value={period} onChange={setPeriod}>
+            <option>October 2026</option>
+            <option>September 2026</option>
+            <option>August 2026</option>
+          </FormSelect>
+        </div>
+        <div className="scope-upload-note">
+          <CheckCircle2 size={17} />
+          <span>Attendance will be imported for <strong>{department}</strong> • <strong>{section}</strong> • <strong>{period}</strong>.</span>
         </div>
       </div>
-      <div className="card table-card"><div className="card-head"><div><h3>Recent Imports</h3><p>Previous attendance files</p></div></div><div className="table-wrap"><table><thead><tr><th>File</th><th>Period</th><th>Uploaded By</th><th>Rows</th><th>Status</th><th>Date</th></tr></thead><tbody>
-        <tr><td><strong>attendance_aug_2026.xlsx</strong></td><td>Aug 2026</td><td>Shantanu Mishra</td><td>200</td><td><span className="status-pill success">Completed</span></td><td>18 Sep 2026</td></tr>
-        <tr><td><strong>attendance_jul_2026.xlsx</strong></td><td>Jul 2026</td><td>Admin</td><td>196</td><td><span className="status-pill warning">Partial Success</span></td><td>31 Aug 2026</td></tr>
-      </tbody></table></div></div>
+
+      <div className="two-grid">
+        <div className="card upload-card">
+          <div className="upload-icon"><FileSpreadsheet size={30} /></div>
+          <h3>Upload Attendance File</h3>
+          <p>Supported format: Excel (.xlsx, .xls)</p>
+          <label className="dropzone">
+            <UploadCloud size={28} />
+            <strong>{file ? file.name : "Choose an Excel file"}</strong>
+            <span>{file ? "File selected" : "Click to browse from your computer"}</span>
+            <input type="file" accept=".xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+          </label>
+          <button className="primary-button full" onClick={startImport} disabled={!file || processing}>
+            {processing ? <><RefreshCw size={17} className="spin" />Processing...</> : <><Upload size={17} />Import {section} Attendance</>}
+          </button>
+          {done && <div className="success-box"><CheckCircle2 size={18} /><div><strong>Import completed</strong><span>186 valid rows processed for {section}.</span></div></div>}
+        </div>
+
+        <div className="card">
+          <div className="card-head"><div><h3>Import Summary</h3><p>Latest processed file</p></div><Database size={19} /></div>
+          <div className="import-stat"><span>Department</span><strong>{department}</strong></div>
+          <div className="import-stat"><span>Section</span><strong>{section}</strong></div>
+          <div className="import-stat"><span>Total Rows</span><strong>200</strong></div>
+          <div className="import-stat"><span>Valid Rows</span><strong>186</strong></div>
+          <div className="import-stat"><span>Invalid / Duplicate</span><strong>14</strong></div>
+        </div>
+      </div>
+
+      <div className="card table-card">
+        <div className="card-head"><div><h3>Recent Attendance Imports</h3><p>Previous section-wise attendance files</p></div></div>
+        <div className="table-wrap"><table><thead><tr><th>File</th><th>Department</th><th>Section</th><th>Period</th><th>Uploaded By</th><th>Status</th></tr></thead><tbody>
+          <tr><td><strong>cse_a_oct_2026.xlsx</strong></td><td>Computer Science</td><td>CSE-A</td><td>Oct 2026</td><td>Rahul Verma</td><td><span className="status-pill success">Completed</span></td></tr>
+          <tr><td><strong>cse_b_sep_2026.xlsx</strong></td><td>Computer Science</td><td>CSE-B</td><td>Sep 2026</td><td>HOD</td><td><span className="status-pill warning">Partial Success</span></td></tr>
+        </tbody></table></div>
+      </div>
     </>
   );
 }
@@ -736,6 +1417,26 @@ function SettingsPage() {
     <>
       <PageHeader title="Settings" subtitle="Configure attendance and communication behavior" actions={<button className="primary-button"><Save size={17} />Save Settings</button>} />
       <div className="two-grid"><div className="card form-card"><div className="card-head"><h3>Attendance Settings</h3><SlidersHorizontal size={19} /></div><div className="form-grid one"><FormInput label="Default Attendance Threshold %" value="75" onChange={() => {}} type="number" /><FormSelect label="Default Language" value="English" onChange={() => {}}><option>English</option><option>Hindi</option><option>Hinglish</option></FormSelect></div><div className="toggle-row"><div><strong>Enable Automatic Eligibility</strong><span>Use threshold for campaign target selection.</span></div><input type="checkbox" defaultChecked /></div></div><div className="card form-card"><div className="card-head"><h3>Calling Settings</h3><PhoneCall size={19} /></div><div className="form-grid one"><FormSelect label="Retry Policy" value="3 Attempts" onChange={() => {}}><option>3 Attempts</option><option>2 Attempts</option><option>1 Attempt</option></FormSelect><FormInput label="Calling Window" value="10:00 AM – 06:00 PM" onChange={() => {}} /></div><div className="service-status"><div><span className="service-dot"></span><strong>Calling Provider</strong></div><span className="status-pill success">Connected</span></div></div></div>
+    </>
+  );
+}
+
+
+function NotificationsPage({ role }) {
+  const items = [
+    { title: "Leave application", text: role === "student" ? "Your leave request is awaiting approval." : "A new leave application needs review.", time: "10 min ago", icon: FileText },
+    { title: "Attendance import", text: "Attendance data was processed successfully.", time: "1 hr ago", icon: UploadCloud },
+    { title: "AI calling", text: "Campaign activity has been updated.", time: "2 hrs ago", icon: PhoneCall },
+  ];
+  return (
+    <>
+      <PageHeader title="Notifications" subtitle="System updates and action reminders" />
+      <div className="notification-page-list">
+        {items.map((item, i) => {
+          const Icon = item.icon;
+          return <div className="card notification-page-item" key={i}><div className="notification-page-icon"><Icon size={20} /></div><div><strong>{item.title}</strong><p>{item.text}</p><span>{item.time}</span></div><span className="status-pill warning">Unread</span></div>;
+        })}
+      </div>
     </>
   );
 }
