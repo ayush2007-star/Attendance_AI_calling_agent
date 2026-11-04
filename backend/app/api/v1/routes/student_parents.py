@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
-
+from app.api.dependencies import require_permission
+from app.models.user import User
 from app.db.dependencies import get_db
 from app.schemas.student_parent import (
     StudentParentCreate,
@@ -23,5 +24,6 @@ router = APIRouter(
 def create_student_parent_endpoint(
     data: StudentParentCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("student.create")),
 ):
     return create_student_parent(db, data)

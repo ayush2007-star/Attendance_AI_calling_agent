@@ -10,22 +10,24 @@ from app.api.v1.routes.calls import router as calls_router
 from app.api.v1.routes.followups import router as followups_router
 from app.api.v1.routes.dashboard import router as dashboard_router
 from app.api.v1.routes.leaves import router as leaves_router
+from app.api.v1.routes.student_parents import router as student_parents_router
 
 api_router = APIRouter()
 
-
+# Classes
 api_router.include_router(
     classes_router,
 )
 
+# Students
 api_router.include_router(
     students_router,
 )
-
+# Attendance
 api_router.include_router(
     attendance_router,
 )
-
+# users
 api_router.include_router(
     users_router,
 )
@@ -43,3 +45,6 @@ api_router.include_router(dashboard_router)
 
 api_router.include_router(leaves_router)
 
+api_router.include_router(
+    student_parents_router,
+)
