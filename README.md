@@ -1,6 +1,6 @@
 # AttendWise AI 2026 — Autonomous Academic Attendance & Parent Response Management System
 
-AttendWise is an enterprise-grade, database-driven college attendance management and automated parent communication system. It automates absence detection from institutional attendance rosters, resolves authorized parent/guardian contact records directly from PostgreSQL, and orchestrates conversational multilingual phone outreach via an isolated AI Voice Agent.
+AttendWise is an institutional, database-driven college attendance management and automated parent communication system. It automates absence detection from institutional attendance rosters, resolves authorized parent/guardian contact records directly from PostgreSQL, and orchestrates conversational multilingual phone outreach via an isolated AI Voice Agent.
 
 ---
 
@@ -17,7 +17,7 @@ AttendWise is an enterprise-grade, database-driven college attendance management
 9. [Frontend Components & User Interface](#9-frontend-components--user-interface)
 10. [Environment Variables & Security Configuration](#10-environment-variables--security-configuration)
 11. [Local Setup, Execution & Management Scripts](#11-local-setup-execution--management-scripts)
-12. [Cloud Deployment Guide (Vercel & Render)](#12-cloud-deployment-guide-vercel--render)
+12. [Provider Implementations, Verification Status & Deployment Blockers](#12-provider-implementations-verification-status--deployment-blockers)
 13. [Automated Test Suite & Verification Results](#13-automated-test-suite--verification-results)
 14. [Viva Voce Questions & Answers](#14-viva-voce-questions--answers)
 15. [Professor & Examiner Presentation Guide](#15-professor--examiner-presentation-guide)
@@ -32,7 +32,7 @@ AttendWise solves this through a strictly database-backed pipeline:
 1. **Roster Ingestion:** Faculty or administrators import attendance rosters (Excel, CSV, DOCX) or record live daily roll calls.
 2. **Deterministic Absence Detection:** Identifies students absent on specific dates or falling below configurable statutory thresholds (e.g., 75%).
 3. **Database-Driven Contact Resolution:** Resolves primary guardian contacts, preferred languages, and explicit call authorizations from PostgreSQL.
-4. **Autonomous Voice Telephony:** An isolated Python voice agent conducts low-latency, conversational voice calls in Hindi (`hi-IN`) or Indian English (`en-IN`).
+4. **Autonomous Voice Telephony:** An isolated Python voice agent designed for conversational voice calls in Hindi (`hi-IN`) or Indian English (`en-IN`), with a fully verified offline mock demonstration mode.
 5. **AI Analysis & Follow-Up Automation:** Transcripts are classified into structured categories (Medical Reason, Will Attend, Disputed, Bus Delay, Callback Requested), with automated follow-up ticket scheduling.
 6. **Institutional Hierarchy:** Complete Role-Based Access Control (RBAC) across Director (`SUPER_ADMIN`), Head of Department (`ADMIN`), and Faculty (`STAFF`).
 
@@ -50,10 +50,10 @@ AttendWise solves this through a strictly database-backed pipeline:
 
 ### Voice Telephony Service (`voice-agent/`)
 - **Web Framework:** FastAPI with Bidirectional WebSockets (`/media-stream`)
-- **Telephony Provider:** Twilio REST API & TwiML WebSocket Audio Stream
-- **Speech-to-Text (STT):** Deepgram Nova-3 Multi-lingual streaming websocket
-- **Dialogue Intelligence:** Groq LLM API (`openai/gpt-oss-20b`)
-- **Text-to-Speech (TTS):** Edge TTS (`hi-IN-MadhurNeural`, `en-IN-NeerjaNeural`) with fallback to Cartesia Sonic (`mulaw 8000Hz`)
+- **Telephony Provider:** Twilio REST API & TwiML WebSocket Audio Stream (code-complete integration; live outbound carrier calls have not yet been verified with a real authorized phone call)
+- **Speech-to-Text (STT):** Deepgram Nova-3 Multilingual streaming websocket (requires live API key and external network access; live API connectivity is not verified with currently blank keys)
+- **Dialogue Intelligence:** Groq LLM API (`openai/gpt-oss-20b`) with local rule-based keyword fallback (`_fallback_rule_based`) (requires live API key and external network access; live API connectivity is not verified with currently blank keys)
+- **Text-to-Speech (TTS):** Edge TTS (`hi-IN-MadhurNeural`, `en-IN-NeerjaNeural`) streaming from Microsoft online speech cloud endpoints (requires external network access); optional Cartesia Sonic (`mulaw 8000Hz`) cloud fallback (requires `CARTESIA_API_KEY` and external network access)
 - **State Store:** PostgreSQL CallStore with idempotency and session replay protection
 
 ### Frontend Web Application (`frontend/`)
@@ -120,7 +120,7 @@ attendance-ai-agent/
 │   │   ├── schemas/              # Pydantic validation schemas
 │   │   └── services/             # Core business logic services
 │   ├── migrations/               # Alembic database migration revisions
-│   ├── tests/                    # 30 comprehensive automated tests (including E2E flow)
+│   ├── tests/                    # 48 comprehensive automated tests (including 11 E2E flow tests)
 │   ├── Dockerfile                # Production container definition
 │   ├── pytest.ini                # Pytest configuration with pythonpath=.
 │   └── requirements.txt          # Python production dependencies
@@ -143,8 +143,8 @@ attendance-ai-agent/
 ├── scripts/                      # Verified PowerShell Operations Scripts
 │   ├── setup-local.ps1           # Full 1-click dependency install, DB migration, admin bootstrap
 │   ├── start-local.ps1           # Launches Backend (8000), Voice Agent (8001), Frontend (5173)
-│   ├── check-local.ps1           # Executes full health check, 50 automated tests, frontend build
-│   └── stop-local.ps1            # Cleanly terminates all services by port
+│   ├── check-local.ps1           # Executes full health check, 68 automated tests (48 backend + 20 voice-agent), frontend build
+│   └── stop-local.ps1            # Safely terminates project-managed services using PID and process identity tracking via .run/pids.json (not blind port termination)
 └── README.md                     # Master project technical specification
 ```
 
@@ -201,7 +201,7 @@ erDiagram
 | `POST` | `/api/v1/campaigns/{id}/dispatch-next` | Dispatch next eligible, authorized call target | `campaign.manage` |
 | `POST` | `/api/v1/calls/attempts/{id}/dispatch` | Dispatch call attempt to active provider | `campaign.manage` |
 | `POST` | `/api/v1/calls/callback` | Authenticated webhook callback from voice agent | `X-API-Key` |
-| `POST` | `/api/v1/calls/simulate-response` | Mock simulation of parent conversation | `campaign.manage` |
+| `POST` | `/api/v1/calls/simulate-response` | Mock simulation using synthetic dialogue and transcripts marked `is_demo=True` | `campaign.manage` |
 | `GET` | `/api/v1/followups` | Review and update scheduled follow-up tickets | `followup.read` |
 
 ---
@@ -211,16 +211,18 @@ erDiagram
 The voice agent is an isolated microservice operating on port 8001:
 
 1. **Call Origination:** Receives an authenticated dispatch request from the backend containing structured context (student name, guardian name, attendance percentage, date).
-2. **Twilio REST Dispatch:** Places an outbound call via Twilio REST API pointing to the `/twiml/{session_id}` endpoint.
+2. **Twilio REST Dispatch:** Designed to place outbound calls via Twilio REST API pointing to the `/twiml/{session_id}` endpoint (code-verified integration; actual live outbound carrier calls have not yet been placed or verified with a real authorized phone call).
 3. **Bi-directional WebSocket Stream:** Upon answer, Twilio connects to `/media-stream`, streaming raw μ-law 8000Hz audio frames.
-4. **Speech Recognition (STT):** Deepgram Nova-3 processes continuous inbound audio frames into transcribed text events.
+4. **Speech Recognition (STT):** Deepgram Nova-3 processes continuous inbound audio frames into transcribed text events over a cloud WebSocket (requires active external internet access and `DEEPGRAM_API_KEY`; connectivity is not verified with default blank keys).
 5. **Conversational Turn Management:** `DialogManager` governs state progression:
    - Initial greeting in Hindi / English with institutional affiliation.
    - Absence notification with student's current attendance percentage.
    - Inquiry regarding reason for absence.
    - Cooperative handling of interruption and clarification.
-6. **Low-Latency Speech Synthesis (TTS):** Edge TTS generates crystal-clear Hindi audio chunks piped back through the WebSocket.
-7. **Post-Call Analysis & Callback:** Once the call terminates, `ResponseAnalyzer` extracts reason categories and invokes the backend webhook callback `/api/v1/calls/callback` with API key authentication.
+   - Generates contextual responses via Groq LLM API (`openai/gpt-oss-20b`) or local fallback rule-based classifier. Groq requires external internet access and `GROQ_API_KEY` (connectivity unverified with blank keys).
+6. **Speech Synthesis (TTS):** Edge TTS generates Hindi/English audio chunks streamed from Microsoft online speech cloud endpoints (requires external internet access); optional Cartesia Sonic WebSocket client provides alternative speech synthesis (`mulaw 8000Hz`, requires `CARTESIA_API_KEY` and external network access). Neither TTS provider operates offline.
+7. **Post-Call Analysis & Callback:** Once the call terminates, `ResponseAnalyzer` extracts reason categories (via Groq API or rule-based fallback) and invokes the backend webhook callback `/api/v1/calls/callback` with API key authentication.
+8. **Demonstration & Testing Mode:** In default and local evaluation environments, the system utilizes the fully verified `MockCallingProvider`, where calls are simulated with deterministic synthetic dialogue and resulting records/transcripts are explicitly stamped with `is_demo=True`.
 
 ---
 
@@ -268,7 +270,11 @@ AttendWise enforces strict regulatory compliance and fail-closed privacy:
 - **`call_opt_out = False` (Default):** No opt-out has been recorded. Absence of an opt-out is NEVER confused with consent.
 - **`contact_authorized = False` (Default):** The target has not yet passed full backend verification.
 
-Alembic migration `c1e5a2b3d4f5_consent_fails_closed` changed database server defaults to `false` and reset unverified existing records to fail closed (`call_consent = false`). True consent is preserved only where explicit authorization has been recorded.
+Alembic migration `c1e5a2b3d4f5_consent_fails_closed` changed database server defaults to `false` and reset all previously unverified consent values to `false` (`call_consent = false`) because no trustworthy historical consent audit records were available.
+
+> [!IMPORTANT]
+> **Documented Affirmative Consent Requirement:**
+> A guardian's affirmative consent must be genuinely documented (e.g., through signed physical admission/registration forms, written consent slips, or verifiable institutional records). An administrative UI toggle in `ParentsPage` modifies the database record for operational management, but an admin UI toggle alone must NOT be described as legal proof of guardian consent.
 
 ### 11 Mandatory Call Eligibility Checks
 Before any call is queued or dispatched, the backend enforces 11 server-side verification gates:
@@ -295,10 +301,10 @@ The React frontend offers a responsive, high-contrast, institutional dashboard:
 - **`AttendanceTerminal.jsx`:** Real-time roll-call terminal allowing faculty to mark Present/Absent/Late with instant visual feedback.
 - **`CampaignPage.jsx`:** Campaign configuration wizard with date selection, class filters, and attendance threshold sliders.
 - **`CallOperationsPage.jsx`:** Real-time call operations cockpit displaying active call targets, call statuses, live simulation options, and turn-by-turn transcripts.
-- **`ParentsPage.jsx`:** Database-backed directory of parent and guardian contacts, with inline consent toggling, phone number editing, and guardian registration.
+- **`ParentsPage.jsx`:** Database-backed directory of parent and guardian contacts, with phone number editing, guardian registration, and administrative consent status toggling (note: this toggle manages the database authorization state, but affirmative guardian consent must be documented through institutional records).
 - **`StudentsPage.jsx`:** Comprehensive student directory displaying student IDs, roll numbers, classes, emails, and linked primary guardian contacts.
 - **`FollowupsPage.jsx`:** Action board for pending administrative callbacks with status management (`PENDING`, `COMPLETED`, `CANCELLED`).
-- **`MLRiskPage.jsx`:** Advisory dropout risk radar based on historic attendance trends.
+- **`MLRiskPage.jsx`:** Advisory attendance risk dashboard based on deterministic heuristic rule-based indicators (`rule-based-v1`: attendance percentage drops, absence streaks, and urgency thresholds). Note: This uses explicit heuristics and rule-based tiers; it does NOT claim trained machine learning models or statistical predictive accuracy.
 
 ---
 
@@ -314,7 +320,7 @@ The backend and voice-agent services communicate via a shared server-to-server s
 ```env
 APP_NAME=AttendWise AI
 ENVIRONMENT=development
-DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/attendance_ai_agent
+DATABASE_URL=postgresql+psycopg://<DB_USER>:<SECURE_LOCAL_PASSWORD>@localhost:5432/<DB_NAME>
 JWT_SECRET_KEY=<generated-cryptographic-secret-32-chars-minimum>
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
@@ -335,7 +341,7 @@ REAL_CALLS_ENABLED=false
 EXTERNAL_AI_PROCESSING_APPROVED=false
 PUBLIC_BASE_URL=https://your-domain.ngrok-free.app
 CALL_API_KEY=<synchronized-internal-telephony-secret>
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/attendance_ai_agent
+DATABASE_URL=postgresql://<DB_USER>:<SECURE_LOCAL_PASSWORD>@localhost:5432/<DB_NAME>
 
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
@@ -348,10 +354,32 @@ DEEPGRAM_LANGUAGE=multi
 GROQ_API_KEY=
 GROQ_MODEL=openai/gpt-oss-20b
 
+# Speech Synthesis: edge (default cloud endpoint), cartesia (optional cloud provider), or deepgram
 TTS_PROVIDER=edge
 EDGE_VOICE_HI=hi-IN-MadhurNeural
 EDGE_VOICE_EN=en-IN-NeerjaNeural
+
+# Optional Cartesia TTS Configuration (supported when TTS_PROVIDER=cartesia)
+CARTESIA_API_KEY=
+CARTESIA_MODEL=sonic-3.6
+CARTESIA_VOICE_ID=
+CARTESIA_VERSION=2026-08-14
 ```
+
+> [!TIP]
+> **Secure Local PostgreSQL Setup Instructions:**
+> Never use weak or default illustrative credentials like `postgres:postgres` in any environment. To configure a dedicated, secure local database user:
+> 1. Launch `psql` as a PostgreSQL administrator:
+>    ```sql
+>    CREATE USER attendwise_user WITH ENCRYPTED PASSWORD '<SECURE_LOCAL_PASSWORD>';
+>    CREATE DATABASE attendance_ai_agent OWNER attendwise_user;
+>    GRANT ALL PRIVILEGES ON DATABASE attendance_ai_agent TO attendwise_user;
+>    ```
+> 2. Set `DATABASE_URL` in `backend/.env`:
+>    `postgresql+psycopg://attendwise_user:<SECURE_LOCAL_PASSWORD>@localhost:5432/attendance_ai_agent`
+> 3. Set `DATABASE_URL` in `voice-agent/.env`:
+>    `postgresql://attendwise_user:<SECURE_LOCAL_PASSWORD>@localhost:5432/attendance_ai_agent`
+> 4. Verify connectivity using `.\scripts\check-local.ps1`.
 
 ### Frontend Configuration (`frontend/.env`):
 ```env
@@ -417,26 +445,28 @@ Gracefully terminates ONLY project-managed processes recorded in `.run\pids.json
 
 ## 12. Provider Implementations, Verification Status & Deployment Blockers
 
-### Actual Provider Implementations
+### Actual Provider Implementations & Verification Status
 
-| Subsystem | Implemented Logic | Integration Status | Behavior with Blank Credentials |
+| Subsystem | Implemented Logic | Verification & Testing Status | Network & Credential Requirements |
 | :--- | :--- | :--- | :--- |
-| **Mock Calling** | Fully local, multi-turn parameterized Hindi/Hinglish dialog with BBS College persona, medical/transit/leave/callback presets, synthetic transcripts with `is_demo=True`. | **Fully Verified** | Runs 100% locally with zero external network dependencies. Default demonstration mode. |
-| **Groq AI** | HTTP client to `/chat/completions` for guardian check, conversational attendance dialog, and structured transcript analysis. | **Code Complete & Verified** | Fails closed or invokes rule-based fallback keyword classifier (`_fallback_rule_based`). |
-| **Deepgram STT** | WebSocket client (`wss://api.deepgram.com/v1/listen`) consuming incoming 8000Hz μ-law Twilio audio with Nova-3 Hindi/multilingual model. | **Code Complete** | Telephony server fails closed (`503 Service Unavailable`) if `DEEPGRAM_API_KEY` is absent. |
-| **Edge TTS & Cartesia** | Local Edge TTS generates audio resampled to μ-law 8000Hz via `av` container; Cartesia Sonic WebSocket client provides low-latency fallback. | **Code Complete & Verified** | Edge TTS runs locally without API keys; Cartesia requires `CARTESIA_API_KEY`. |
-| **Twilio Voice** | Twilio REST client creates outbound calls (`calls.create`); `/twiml` serves secure media stream WebSocket; `/events` receives status webhooks with HMAC-SHA1 validation. | **Code Complete** | Telephony server fails closed (`503 Service Unavailable`) if Twilio credentials are blank. |
+| **Mock Calling** | Fully local, multi-turn parameterized Hindi/Hinglish dialog with BBS College persona, medical/transit/leave/callback presets, synthetic transcripts stamped with `is_demo=True`. | **Fully Tested & Verified** | Runs 100% locally with **zero external network dependencies** and no external API keys. Default demonstration mode. |
+| **Twilio Voice** | Twilio REST client creates outbound calls (`calls.create`); `/twiml` serves secure media stream WebSocket; `/events` receives status webhooks with HMAC-SHA1 validation. | **Code-Verified Only** (Unit/mock tests pass; **actual outbound calls have NOT yet been verified with a real authorized phone call**) | Requires active Twilio account credentials (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`), public HTTPS tunnel (`PUBLIC_BASE_URL`), and external network access. Telephony server fails closed (`503 Service Unavailable`) if credentials are blank. |
+| **Groq AI** | HTTP client to `/chat/completions` for guardian check, conversational attendance dialog, and structured transcript analysis. | **Code-Verified Only** (Unit tests pass; **live API connectivity is NOT verified with currently blank keys**) | Requires `GROQ_API_KEY` and **external network access** (does NOT operate offline). When keys are absent, falls back to local rule-based keyword classifier (`_fallback_rule_based`). |
+| **Deepgram STT** | WebSocket client (`wss://api.deepgram.com/v1/listen`) consuming incoming 8000Hz μ-law Twilio audio with Nova-3 Hindi/multilingual model. | **Code-Verified Only** (Unit tests pass; **live API connectivity is NOT verified with currently blank keys**) | Requires `DEEPGRAM_API_KEY` and **external network access** (does NOT operate offline). Telephony server fails closed (`503 Service Unavailable`) if key is absent. |
+| **Edge TTS & Cartesia** | Edge TTS generates speech chunks resampled to μ-law 8000Hz via `av` container; Cartesia Sonic HTTP/WebSocket client provides alternative speech synthesis. | **Code-Verified Only** (Unit tests pass; Cartesia live API connectivity unverified) | **Requires external network access**; Edge TTS communicates with Microsoft online speech cloud endpoints (does NOT run offline, though requires no paid key). Cartesia requires `CARTESIA_API_KEY` and external network access. |
 
-### Real Calls vs. Mock Status
-- **Default Mode:** `REAL_CALLS_ENABLED=false` and `EXTERNAL_AI_PROCESSING_APPROVED=false`. No live telephone carrier connections or external model calls are initiated without explicit administrative opt-in.
-- **Audited Evaluation:** All end-to-end campaign operations, queueing, dispatch rechecks, transcript storage, AI classifications, and follow-up generation are fully verified in the local environment using the mock provider and deterministic synthetic data.
+### Distinction: Code-Verified vs. Live-Provider-Tested
+- **Code-Verified Integrations:** The Twilio, Groq, Deepgram, Edge TTS, and Cartesia adapters are implemented, type-checked, and validated with unit test suites (e.g. schema serialization, HMAC signature verification, prompt generation, error handling).
+- **Live-Provider Testing Status:** Live external provider connectivity has **NOT** been validated against active third-party cloud services because live API keys are left blank in default configuration, and actual outbound carrier calls have **NOT** been verified with a real authorized phone call.
+- **External Network Dependencies:** Contrary to common misconceptions, Edge TTS, Groq, Deepgram, and Cartesia all require outbound internet connectivity to communicate with remote cloud endpoints. They do not operate without external network access.
+- **Mock Calls & Synthetic Dialogues:** Only the Mock Calling provider operates completely offline with zero external network access. It generates synthetic multi-turn conversations (covering medical excuses, transit delays, casual leave, dispute cases, and callbacks) and explicitly stamps every generated attempt, transcript, and audit record with `is_demo=True`.
 
 ### Deployment Blockers for Live Telephony
 Before switching `REAL_CALLS_ENABLED=true` in production:
 1. **Twilio Account Provisioning:** Active Twilio account with Account SID, Auth Token, and an E.164 caller ID number (`TWILIO_FROM_NUMBER`).
 2. **Public HTTPS Webhook URL:** Twilio requires a public HTTPS base URL (`PUBLIC_BASE_URL`) with valid SSL for TwiML and WebSocket media streams.
 3. **External AI Credentials:** Valid API keys for Groq (`GROQ_API_KEY`) and Deepgram (`DEEPGRAM_API_KEY`).
-4. **Institutional Consent Audit:** Verification that all contacted guardians have provided documented affirmative consent in `parents.call_consent`.
+4. **Institutional Consent Audit:** Verification that all contacted guardians have provided documented affirmative consent in `parents.call_consent` (an administrative UI toggle alone does not satisfy legal audit proof).
 
 ---
 
@@ -495,10 +525,10 @@ The AttendWise repository is validated by **68 comprehensive automated tests** a
 **Answer:** AttendWise never hardcodes student names, roll numbers, or parent contact details in source files. Every call campaign dynamically queries PostgreSQL for students marked absent on a specific date, fetches their primary authorized guardian from `student_parents` and `parents` tables, validates explicit consent, and snapshots that dynamic context into `campaign_targets`.
 
 ### Q2: How does the AI Voice Agent handle real-time conversational telephony?
-**Answer:** When Twilio connects an outbound call, it opens a bi-directional WebSocket connection (`/media-stream`). Inbound audio frames (μ-law 8000Hz) are streamed directly to Deepgram Nova-3 for sub-300ms speech-to-text. The text is passed to a specialized Groq LLM instance that generates conversational Hindi responses under 2 sentences. The response is converted to audio by Edge TTS and streamed back to Twilio.
+**Answer:** The voice agent is architected for streaming telephony: when Twilio establishes an outbound call, it opens a bi-directional WebSocket connection (`/media-stream`). Inbound audio frames (μ-law 8000Hz) stream to Deepgram Nova-3 over a cloud WebSocket for speech recognition. The transcribed text is processed by a Groq LLM instance (with a local rule-based fallback keyword classifier) to generate concise conversational Hindi/English responses, which Edge TTS (streaming from Microsoft online speech cloud endpoints) or Cartesia converts to μ-law audio frames sent back through the WebSocket. Note that sub-300ms latency is not claimed without empirical network benchmarking; live external provider connectivity has not been verified with active credentials, and actual outbound carrier calls have not yet been placed. For local development and demonstration, the fully verified Mock Calling Provider simulates the conversation using synthetic dialogues marked `is_demo=True`.
 
 ### Q3: How is parent privacy and call authorization enforced?
-**Answer:** The `parents` table contains explicit `call_consent` and `call_opt_out` boolean flags. The campaign engine fails closed: if a guardian has not granted consent or has opted out, `contact_authorized` is set to `False`, and call dispatch attempts are blocked with an HTTP 409 Conflict. Furthermore, live calls are gated behind `REAL_CALLS_ENABLED=true` in server settings.
+**Answer:** The `parents` table enforces fail-closed privacy through explicit `call_consent` and `call_opt_out` boolean flags. Following Alembic migration `c1e5a2b3d4f5_consent_fails_closed`, all previously unverified consent values were reset to `false` because no trustworthy historical consent audit records were available. If a guardian does not have documented affirmative consent (`call_consent=False`) or has opted out (`call_opt_out=True`), `contact_authorized` evaluates to `False`, and call dispatch is blocked with HTTP 409 Conflict across 11 verification gates. An administrative UI toggle in `ParentsPage` updates the database record for operational control, but affirmative guardian consent must be genuinely documented through institutional records (e.g. signed admission forms or written consent slips) rather than inferred from an admin UI switch alone. Furthermore, live telephony is gated behind `REAL_CALLS_ENABLED=true` and `EXTERNAL_AI_PROCESSING_APPROVED=true`.
 
 ### Q4: How are call outcomes persisted and analyzed?
 **Answer:** Upon call completion, the voice agent posts a webhook callback payload to the backend containing duration, turn-by-turn transcripts with confidence scores, and AI analysis. The backend saves these into `conversations`, `transcripts`, and `ai_analyses` tables, updates the campaign target status to `COMPLETED`, and automatically generates a `followups` task if further administrative action is needed.
@@ -513,12 +543,12 @@ The AttendWise repository is validated by **68 comprehensive automated tests** a
 When demonstrating AttendWise to evaluation committees or professors, follow this structured walkthrough:
 
 1. **Architecture & Safety First:** Emphasize that live calls fail closed (`REAL_CALLS_ENABLED=false`) and run in high-fidelity mock simulation mode during demos to prevent unsolicited calls.
-2. **Student & Guardian Directory:** Show `StudentsPage` and `ParentsPage`. Demonstrate editing a guardian's phone number and toggling their call authorization status.
+2. **Student & Guardian Directory:** Show `StudentsPage` and `ParentsPage`. Demonstrate editing a guardian's phone number and toggling their call authorization status in the management UI (clarifying that affirmative consent must be documented via institutional records and that the toggle updates the operational database flag).
 3. **Daily Roll Call:** Navigate to `AttendanceTerminal`. Mark a student `ABSENT`.
 4. **Campaign Creation:** Go to `CampaignPage`. Select today's date. Notice how the system automatically identifies the absent student from PostgreSQL and populates the campaign targets.
-5. **Call Operations & Simulation:** Open `CallOperationsPage`. Dispatch the call. Demonstrate the realistic Hindi conversational dialogue (e.g., parent stating medical illness or transit delay).
-6. **Transcript & Follow-up Audit:** Show the generated turn-by-turn conversation transcript, the Groq AI classification, and the automatically generated follow-up ticket in `FollowupsPage`.
-7. **Code Quality & Testing:** Execute `.\scripts\check-local.ps1` in the terminal to demonstrate that all 50 automated tests pass and the production build compiles with zero errors.
+5. **Call Operations & Simulation:** Open `CallOperationsPage`. Dispatch the call in demonstration mode. Explain that mock calls execute deterministic synthetic Hindi/Hinglish dialogues (e.g., parent stating medical illness or transit delay) and save complete transcripts explicitly marked with `is_demo=True`.
+6. **Transcript & Follow-up Audit:** Show the generated turn-by-turn conversation transcript, the AI/rule-based classification, and the automatically generated follow-up ticket in `FollowupsPage`.
+7. **Code Quality & Testing:** Execute `.\scripts\check-local.ps1` in the terminal to demonstrate that all 68 automated tests (48 backend + 20 voice-agent) pass and the production build compiles with zero errors.
 
 ---
 
