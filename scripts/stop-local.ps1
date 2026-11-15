@@ -43,8 +43,23 @@ foreach ($prop in $pidsJson.PSObject.Properties) {
         $proc = Get-Process -Id $targetPid -ErrorAction SilentlyContinue
         if ($proc) {
             $pName = $proc.ProcessName.ToLower()
-            $cim = Get-CimInstance Win32_Process -Filter "ProcessId = $targetPid" -ErrorAction SilentlyContinue
-            $cmdLine = if ($cim -and $cim.CommandLine) { $cim.CommandLine } else { "" }
+            $cmdLine = ""
+            try {
+                if ($proc.PSObject.Properties['CommandLine'] -and $proc.CommandLine) {
+                    $cmdLine = $proc.CommandLine
+                }
+            } catch {}
+            if (-not $cmdLine -and (Test-Path "/proc/$targetPid/cmdline")) {
+                try {
+                    $cmdLine = (Get-Content -Raw "/proc/$targetPid/cmdline" -ErrorAction SilentlyContinue) -replace "`0", " "
+                } catch {}
+            }
+            if (-not $cmdLine) {
+                try {
+                    $cim = Get-CimInstance Win32_Process -Filter "ProcessId = $targetPid" -ErrorAction SilentlyContinue
+                    if ($cim -and $cim.CommandLine) { $cmdLine = $cim.CommandLine }
+                } catch {}
+            }
 
             # Identity verification: verify process name is an allowed runner AND command line matches expected marker, script, or root
             $isMatchingIdentity = $false
@@ -63,15 +78,30 @@ foreach ($prop in $pidsJson.PSObject.Properties) {
             if ($isMatchingIdentity) {
                 # Stop child processes (e.g. uvicorn/python, vite/node) spawned by this wrapper
                 try {
-                    $children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $targetPid" -ErrorAction SilentlyContinue
-                    foreach ($child in $children) {
-                        try {
-                            $childProc = Get-Process -Id $child.ProcessId -ErrorAction SilentlyContinue
-                            if ($childProc -and ($allowedProcessNames -contains $childProc.ProcessName.ToLower())) {
-                                Write-Host "  Stopping child process $($childProc.ProcessName) (PID: $($child.ProcessId)) for $serviceName..." -ForegroundColor Gray
-                                Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+                    $children = @()
+                    if (Test-Path "/proc") {
+                        $childPids = (Get-ChildItem /proc/[0-9]*/stat -ErrorAction SilentlyContinue | ForEach-Object {
+                            $stat = Get-Content $_.FullName -ErrorAction SilentlyContinue
+                            if ($stat -match "^\d+\s+\([^)]+\)\s+[A-Za-z]\s+$targetPid\s+") {
+                                $_.Directory.Name
                             }
-                        } catch {}
+                        })
+                        foreach ($cpid in $childPids) {
+                            $cp = Get-Process -Id $cpid -ErrorAction SilentlyContinue
+                            if ($cp) { $children += $cp }
+                        }
+                    } else {
+                        $cimChildren = Get-CimInstance Win32_Process -Filter "ParentProcessId = $targetPid" -ErrorAction SilentlyContinue
+                        foreach ($child in $cimChildren) {
+                            $cp = Get-Process -Id $child.ProcessId -ErrorAction SilentlyContinue
+                            if ($cp) { $children += $cp }
+                        }
+                    }
+                    foreach ($childProc in $children) {
+                        if ($childProc -and ($allowedProcessNames -contains $childProc.ProcessName.ToLower())) {
+                            Write-Host "  Stopping child process $($childProc.ProcessName) (PID: $($childProc.Id)) for $serviceName..." -ForegroundColor Gray
+                            Stop-Process -Id $childProc.Id -Force -ErrorAction SilentlyContinue
+                        }
                     }
                 } catch {}
 

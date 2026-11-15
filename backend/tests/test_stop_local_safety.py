@@ -1,13 +1,18 @@
 import json
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+import pytest
 
 
 def _run_stop_script(repo_root: Path) -> subprocess.CompletedProcess:
     stop_script = repo_root / "scripts" / "stop-local.ps1"
-    cmd = ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(stop_script)]
+    pwsh_bin = shutil.which("pwsh") or shutil.which("powershell")
+    if not pwsh_bin:
+        pytest.skip("PowerShell (pwsh or powershell) is not installed in the execution environment")
+    cmd = [pwsh_bin, "-ExecutionPolicy", "Bypass", "-File", str(stop_script)]
     return subprocess.run(cmd, cwd=str(repo_root), capture_output=True, text=True)
 
 
