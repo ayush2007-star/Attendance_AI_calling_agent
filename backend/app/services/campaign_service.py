@@ -6,6 +6,7 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.phone import is_valid_phone_number
 from app.integrations.calling.factory import get_calling_provider
 from app.models.attendance_summary import AttendanceSummary
 from app.models.attendance import AttendanceRecord
@@ -31,6 +32,12 @@ def create_campaign(
     data: CampaignCreate,
     created_by: User,
 ) -> CallCampaign:
+    if not created_by.is_active or created_by.role in ("STUDENT", "PARENT", "GUEST"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized user cannot initiate or create a campaign",
+        )
+
     selected_class = _validate_campaign_scope(db, data, created_by)
     threshold = _resolve_threshold(db, data.threshold)
 
@@ -66,7 +73,43 @@ def create_campaign(
     for student in absent_students:
         parent = _select_primary_parent(db, student.id)
         summary = latest_summaries.get(student.id)
-        is_authorized = bool(parent and parent.call_consent and not parent.call_opt_out)
+
+        phone = parent.primary_phone if parent else None
+        has_valid_phone = is_valid_phone_number(phone)
+
+        # Check if already notified for this attendance date
+        already_notified = db.execute(
+            select(CallAttempt.id)
+            .join(CampaignTarget, CampaignTarget.id == CallAttempt.campaign_target_id)
+            .join(CallCampaign, CallCampaign.id == CampaignTarget.campaign_id)
+            .where(
+                CampaignTarget.student_id == student.id,
+                CallCampaign.attendance_date == data.attendance_date,
+                CallAttempt.status == "COMPLETED",
+            )
+        ).scalar_one_or_none() is not None
+
+        if not parent:
+            eligibility_reason = "ABSENT_ON_DATE_NO_CONTACT"
+            is_authorized = False
+        elif not phone:
+            eligibility_reason = "MISSING_PHONE"
+            is_authorized = False
+        elif not has_valid_phone:
+            eligibility_reason = "INVALID_PHONE"
+            is_authorized = False
+        elif parent.call_opt_out:
+            eligibility_reason = "CALL_OPT_OUT"
+            is_authorized = False
+        elif not parent.call_consent:
+            eligibility_reason = "NO_CALL_CONSENT"
+            is_authorized = False
+        elif already_notified:
+            eligibility_reason = "ALREADY_NOTIFIED"
+            is_authorized = False
+        else:
+            eligibility_reason = "ABSENT_ON_DATE"
+            is_authorized = True
 
         db.add(
             CampaignTarget(
@@ -77,15 +120,9 @@ def create_campaign(
                     summary.attendance_percentage if summary else 0
                 ),
                 threshold_used=threshold,
-                eligibility_reason=(
-                    "ABSENT_ON_DATE"
-                    if parent
-                    else "ABSENT_ON_DATE_NO_CONTACT"
-                ),
+                eligibility_reason=eligibility_reason,
                 status="PENDING",
-                selected_phone_number=(
-                    parent.primary_phone if parent else None
-                ),
+                selected_phone_number=phone if has_valid_phone else (phone or None),
                 contact_authorized=is_authorized,
             )
         )
@@ -141,7 +178,7 @@ def get_campaign_targets(
             "threshold": float(target.threshold_used),
             "eligibility_reason": target.eligibility_reason,
             "status": target.status,
-            "contact_authorized": getattr(target, "contact_authorized", True),
+            "contact_authorized": getattr(target, "contact_authorized", False),
         }
         for target, student, parent in db.execute(query).all()
     ]
@@ -197,6 +234,11 @@ def start_campaign(
     campaign_id: UUID,
     current_user: User,
 ) -> CallCampaign:
+    if not current_user.is_active or current_user.role in ("STUDENT", "PARENT", "GUEST"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized user cannot initiate or start a campaign",
+        )
     campaign = get_campaign(db, campaign_id, current_user)
     if campaign.status in ("COMPLETED", "STOPPED"):
         raise HTTPException(
@@ -242,6 +284,11 @@ def dispatch_next_campaign_target(
     campaign_id: UUID,
     current_user: User,
 ) -> dict:
+    if not current_user.is_active or current_user.role in ("STUDENT", "PARENT", "GUEST"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized user cannot dispatch campaign calls",
+        )
     from app.services.calling_service import (
         dispatch_call,
         queue_campaign_target,

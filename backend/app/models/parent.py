@@ -44,7 +44,7 @@ class Parent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     call_consent: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        default=True,
+        default=False,
     )
 
     call_opt_out: Mapped[bool] = mapped_column(
@@ -57,3 +57,9 @@ class Parent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="parent",
         cascade="all, delete-orphan",
     )
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("call_consent", False)
+        kwargs.setdefault("call_opt_out", False)
+        kwargs.setdefault("is_active", True)
+        super().__init__(**kwargs)

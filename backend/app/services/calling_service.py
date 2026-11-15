@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
+from app.core.phone import is_valid_phone_number
 from app.models.ai_analysis import AIAnalysis
 from app.models.audit_log import AuditLog
 from app.models.conversation import Conversation
@@ -32,6 +33,12 @@ def queue_campaign_target(
     campaign_target_id: UUID,
     current_user: User,
 ) -> CallAttempt:
+    if not current_user.is_active or current_user.role in ("STUDENT", "PARENT", "GUEST"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized user cannot queue campaign calls",
+        )
+
     query = (
         select(CampaignTarget, CallCampaign, Student)
         .join(Student, Student.id == CampaignTarget.student_id)
@@ -57,6 +64,13 @@ def queue_campaign_target(
         )
 
     target, campaign, student = target_context
+
+    if campaign.status in ("COMPLETED", "STOPPED", "PAUSED"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Campaign is already {campaign.status.lower()} and cannot accept new queued calls",
+        )
+
     attendance_is_absent = db.execute(
         select(AttendanceRecord.id).where(
             AttendanceRecord.student_id == student.id,
@@ -72,7 +86,25 @@ def queue_campaign_target(
             detail="Student is no longer marked absent for this campaign date",
         )
 
-    if not getattr(target, "contact_authorized", True) or not _has_current_primary_contact(db, target, student):
+    already_notified = db.execute(
+        select(CallAttempt.id)
+        .join(CampaignTarget, CampaignTarget.id == CallAttempt.campaign_target_id)
+        .join(CallCampaign, CallCampaign.id == CampaignTarget.campaign_id)
+        .where(
+            CampaignTarget.student_id == student.id,
+            CallCampaign.attendance_date == campaign.attendance_date,
+            CallAttempt.status == "COMPLETED",
+        )
+    ).scalar_one_or_none()
+    if already_notified is not None:
+        target.status = "SKIPPED"
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Contact has already received notification for this absence date",
+        )
+
+    if not getattr(target, "contact_authorized", False) or not _has_current_primary_contact(db, target, student):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Campaign guardian contact is not authorized, active, or primary",
@@ -84,10 +116,10 @@ def queue_campaign_target(
             detail="Campaign target is not available for queueing",
         )
 
-    if target.parent_id is None or not target.selected_phone_number:
+    if target.parent_id is None or not target.selected_phone_number or not is_valid_phone_number(target.selected_phone_number):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Campaign target has no callable contact",
+            detail="Campaign target has no valid callable contact phone number",
         )
 
     last_attempt_number = db.execute(
@@ -246,7 +278,28 @@ def dispatch_call(
             status_code=status.HTTP_409_CONFLICT,
             detail="Student is no longer marked absent for this campaign date",
         )
-    if not getattr(target, "contact_authorized", True) or not _has_current_primary_contact(db, target, student):
+
+    already_notified = db.execute(
+        select(CallAttempt.id)
+        .join(CampaignTarget, CampaignTarget.id == CallAttempt.campaign_target_id)
+        .join(CallCampaign, CallCampaign.id == CampaignTarget.campaign_id)
+        .where(
+            CampaignTarget.student_id == student.id,
+            CallCampaign.attendance_date == campaign.attendance_date,
+            CallAttempt.status == "COMPLETED",
+            CallAttempt.id != attempt.id,
+        )
+    ).scalar_one_or_none()
+    if already_notified is not None:
+        attempt.status = "CANCELLED"
+        target.status = "CANCELLED"
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Contact has already received notification for this absence date",
+        )
+
+    if not getattr(target, "contact_authorized", False) or not _has_current_primary_contact(db, target, student):
         attempt.status = "CANCELLED"
         target.status = "CANCELLED"
         db.commit()
@@ -292,6 +345,8 @@ def _has_current_primary_contact(
     student: Student,
 ) -> bool:
     if target.parent_id is None or not target.selected_phone_number:
+        return False
+    if not is_valid_phone_number(target.selected_phone_number):
         return False
     return db.execute(
         select(Parent.id).join(

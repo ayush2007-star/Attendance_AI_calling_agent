@@ -61,8 +61,12 @@ class CampaignTarget(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     contact_authorized: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        default=True,
+        default=False,
     )
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("contact_authorized", False)
+        super().__init__(**kwargs)
 
     __table_args__ = (
         UniqueConstraint(

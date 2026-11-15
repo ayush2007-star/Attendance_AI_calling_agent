@@ -9,7 +9,7 @@ class ParentCreate(BaseModel):
     alternate_phone: str | None = None
     preferred_language: str = "hi-IN"
     is_active: bool = True
-    call_consent: bool = True
+    call_consent: bool = False
     call_opt_out: bool = False
 
 
@@ -32,5 +32,5 @@ class ParentResponse(BaseModel):
     alternate_phone: str | None
     preferred_language: str
     is_active: bool
-    call_consent: bool = True
+    call_consent: bool = False
     call_opt_out: bool = False

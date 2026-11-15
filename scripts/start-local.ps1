@@ -3,7 +3,8 @@
     AttendWise Local Services Startup Script
 .DESCRIPTION
     Launches the FastAPI backend (port 8000), Voice Agent telephony service (port 8001),
-    and Vite React frontend (port 5173), verifies readiness via health checks, and opens the UI.
+    and Vite React frontend (port 5173), verifies readiness via health checks, records
+    process IDs in .run\pids.json for deterministic teardown, and opens the UI.
 #>
 
 param(
@@ -14,6 +15,9 @@ param(
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $backendPython = Join-Path $root "backend\.venv\Scripts\python.exe"
 $voicePython = Join-Path $root "voice-agent\.venv\Scripts\python.exe"
+$runDir = Join-Path $root ".run"
+if (-not (Test-Path $runDir)) { New-Item -ItemType Directory -Path $runDir | Out-Null }
+$pidsFile = Join-Path $runDir "pids.json"
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "       ATTENDWISE - STARTING LOCAL SERVICES               " -ForegroundColor Cyan
@@ -34,16 +38,32 @@ try {
     Pop-Location
 }
 
+$pidsData = @{}
+
 # 2. Start Backend
 Write-Host "`n[2/4] Starting AttendWise Backend (FastAPI on http://127.0.0.1:8000)..." -ForegroundColor Yellow
 $backendScript = Join-Path $root "scripts\start_backend.ps1"
-Start-Process powershell -ArgumentList "-NoExit", "-File", "`"$backendScript`""
+$backendProc = Start-Process powershell -ArgumentList "-NoExit", "-File", "`"$backendScript`"" -PassThru
+$pidsData["backend"] = @{
+    "pid" = $backendProc.Id
+    "name" = "backend"
+    "script" = $backendScript
+    "marker" = "start_backend.ps1"
+    "started_at" = (Get-Date).ToString("o")
+}
 
 # 3. Start Voice Agent (if not skipped)
 if (-not $SkipVoiceAgent) {
     Write-Host "`n[3/4] Starting AI Voice Agent (FastAPI on http://127.0.0.1:8001)..." -ForegroundColor Yellow
     $voiceScript = Join-Path $root "scripts\start_voice.ps1"
-    Start-Process powershell -ArgumentList "-NoExit", "-File", "`"$voiceScript`""
+    $voiceProc = Start-Process powershell -ArgumentList "-NoExit", "-File", "`"$voiceScript`"" -PassThru
+    $pidsData["voice_agent"] = @{
+        "pid" = $voiceProc.Id
+        "name" = "voice_agent"
+        "script" = $voiceScript
+        "marker" = "start_voice.ps1"
+        "started_at" = (Get-Date).ToString("o")
+    }
 } else {
     Write-Host "`n[3/4] Voice Agent startup skipped (-SkipVoiceAgent specified)." -ForegroundColor Gray
 }
@@ -51,7 +71,17 @@ if (-not $SkipVoiceAgent) {
 # 4. Start Frontend
 Write-Host "`n[4/4] Starting React Frontend (Vite on http://localhost:5173)..." -ForegroundColor Yellow
 $frontScript = Join-Path $root "scripts\start_frontend.ps1"
-Start-Process powershell -ArgumentList "-NoExit", "-File", "`"$frontScript`""
+$frontProc = Start-Process powershell -ArgumentList "-NoExit", "-File", "`"$frontScript`"" -PassThru
+$pidsData["frontend"] = @{
+    "pid" = $frontProc.Id
+    "name" = "frontend"
+    "script" = $frontScript
+    "marker" = "start_frontend.ps1"
+    "started_at" = (Get-Date).ToString("o")
+}
+
+# Record startup session PIDs
+$pidsData | ConvertTo-Json -Depth 4 | Set-Content -Path $pidsFile
 
 # Health check polling
 Write-Host "`nWaiting for services to become ready..." -ForegroundColor Cyan
@@ -94,7 +124,8 @@ Write-Host "  • Backend API:       http://127.0.0.1:8000 (Docs: /docs)" -Foreg
 if (-not $SkipVoiceAgent) {
     Write-Host "  • Voice Agent:       http://127.0.0.1:8001 (Health: /health)" -ForegroundColor Yellow
 }
-Write-Host "  • To shut down all:  .\scripts\stop-local.ps1" -ForegroundColor Gray
+Write-Host "  • Session tracked:   .run\pids.json" -ForegroundColor Gray
+Write-Host "  • To shut down:      .\scripts\stop-local.ps1" -ForegroundColor Gray
 Write-Host "==========================================================" -ForegroundColor Green
 
 if (-not $NoBrowser) {

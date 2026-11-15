@@ -35,6 +35,10 @@ class VoiceAgentCallingProvider:
             raise RuntimeError(
                 "External AI processing is not approved (EXTERNAL_AI_PROCESSING_APPROVED=false)."
             )
+        if not self.api_key:
+            raise RuntimeError(
+                "Internal telephony authentication secret (VOICE_AGENT_API_KEY) is not configured."
+            )
 
         context_data = request.context or {}
         phone_number = request.phone_number.strip()

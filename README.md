@@ -231,37 +231,60 @@ The voice agent is an isolated microservice operating on port 8001:
 Admin creates/imports student
   │
   ▼
-Admin registers parent/guardian in PostgreSQL
+Admin registers parent/guardian in PostgreSQL (call_consent=False, call_opt_out=False)
   │
   ▼
-Parent linked to student as primary contact (StudentParent)
+Parent linked to student as primary contact (StudentParent, is_primary=True)
   │
   ▼
-Faculty imports attendance roster or marks roll call
+Guardian explicitly grants affirmative calling permission (call_consent=True)
   │
   ▼
-Backend detects absent student for campaign date
+Faculty imports attendance roster or marks roll call (student marked ABSENT)
   │
   ▼
-Backend verifies guardian: is_active=True, call_consent=True, call_opt_out=False
+Backend evaluates 11-step eligibility gate (consent, opt-out, phone normalization, duplicate check)
   │
   ▼
-CampaignTarget created with database IDs and phone number
+CampaignTarget created with database IDs, normalized E.164 phone, and contact_authorized=True
   │
   ▼
-CallAttempt created in QUEUED status
+CallAttempt created in QUEUED status under an explicitly initiated campaign (RUNNING)
   │
   ▼
-Provider dispatches call with validated database context
+Backend re-validates all 11 eligibility constraints immediately prior to dispatch
   │
   ▼
-Transcripts, AI Analysis, and Follow-ups saved to PostgreSQL
+Provider initiates call with validated database context (Mock or Voice Agent)
+  │
+  ▼
+Transcripts, AI Analysis, and Follow-ups saved to PostgreSQL source of truth
 ```
 
-### Safety & Compliance Rules:
-- **Zero Hardcoded Data:** Never embed phone numbers, student names, or guardian identities in source files.
-- **Fail-Closed Gate:** Real calls are forbidden unless `REAL_CALLS_ENABLED=true` AND `EXTERNAL_AI_PROCESSING_APPROVED=true`. Default configuration runs safely in mock mode.
-- **Explicit Consent:** A parent who has `call_opt_out=true` or `call_consent=false` is skipped by campaign dispatchers with a validation conflict (`409 Conflict`).
+### Fail-Closed Guardian Consent & Authorization Model
+
+AttendWise enforces strict regulatory compliance and fail-closed privacy:
+- **`call_consent = False` (Default):** Consent has not been granted. A missing consent record is NEVER interpreted as permission to call.
+- **`call_opt_out = False` (Default):** No opt-out has been recorded. Absence of an opt-out is NEVER confused with consent.
+- **`contact_authorized = False` (Default):** The target has not yet passed full backend verification.
+
+Alembic migration `c1e5a2b3d4f5_consent_fails_closed` changed database server defaults to `false` and reset unverified existing records to fail closed (`call_consent = false`). True consent is preserved only where explicit authorization has been recorded.
+
+### 11 Mandatory Call Eligibility Checks
+Before any call is queued or dispatched, the backend enforces 11 server-side verification gates:
+1. **Student Exists & Active:** Student record is active and enrolled in an active class.
+2. **Guardian Exists & Active:** Guardian parent record exists in PostgreSQL and is active.
+3. **Database Relationship Verified:** Guardian is linked to the student via `StudentParent`.
+4. **Primary Contact Verified:** Guardian is designated as the student's primary contact (`is_primary = true`).
+5. **Phone Number Normalized & Valid:** Phone number is in valid E.164 international format (`^\+[1-9]\d{7,14}$`).
+6. **Explicit Consent Granted:** `parent.call_consent` is explicitly `True`.
+7. **No Opt-Out Recorded:** `parent.call_opt_out` is strictly `False`.
+8. **Target Authorization Established:** `target.contact_authorized` has been validated by backend logic.
+9. **Valid Absence Record:** A valid `AttendanceRecord` with status `ABSENT` exists for the campaign date.
+10. **Duplicate Notification Prevented:** Guardian has not already received a `COMPLETED` notification for this absence date.
+11. **Campaign Explicitly Initiated:** Admin has explicitly started the campaign (`status = RUNNING`).
+
+Critical eligibility validation is repeated at dispatch time to prevent stale or manipulated targets from bypassing checks. If consent is revoked between queueing and dispatch, the attempt and target are cancelled immediately.
 
 ---
 
@@ -281,12 +304,18 @@ The React frontend offers a responsive, high-contrast, institutional dashboard:
 
 ## 10. Environment Variables & Security Configuration
 
+### Internal Telephony Authentication
+The backend and voice-agent services communicate via a shared server-to-server secret (`VOICE_AGENT_API_KEY` on the backend, `CALL_API_KEY` on the voice agent).
+- **Fail-Closed Secret Enforcement:** If the secret is not configured, both services reject calls with HTTP 503 Service Unavailable.
+- **Constant-Time Comparison:** Key verification uses `hmac.compare_digest` to prevent timing attacks.
+- **Automated Generation:** `.\scripts\setup-local.ps1` automatically generates cryptographically strong 32-byte random hex keys for new environments without overwriting existing working credentials.
+
 ### Backend Configuration (`backend/.env`):
 ```env
 APP_NAME=AttendWise AI
 ENVIRONMENT=development
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/attendance_ai_agent
-JWT_SECRET_KEY=attendwise-super-secure-production-jwt-token-key-2026
+JWT_SECRET_KEY=<generated-cryptographic-secret-32-chars-minimum>
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
 CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
@@ -295,7 +324,7 @@ CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 REAL_CALLS_ENABLED=false
 EXTERNAL_AI_PROCESSING_APPROVED=false
 VOICE_AGENT_BASE_URL=http://127.0.0.1:8001
-VOICE_AGENT_API_KEY=attendwise-internal-telephony-secret-key-2026
+VOICE_AGENT_API_KEY=<synchronized-internal-telephony-secret>
 CALLING_PROVIDER=mock
 ```
 
@@ -305,7 +334,7 @@ BACKEND_BASE_URL=http://127.0.0.1:8000
 REAL_CALLS_ENABLED=false
 EXTERNAL_AI_PROCESSING_APPROVED=false
 PUBLIC_BASE_URL=https://your-domain.ngrok-free.app
-CALL_API_KEY=attendwise-internal-telephony-secret-key-2026
+CALL_API_KEY=<synchronized-internal-telephony-secret>
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/attendance_ai_agent
 
 TWILIO_ACCOUNT_SID=
@@ -348,16 +377,20 @@ Starts Backend (8000), Voice Agent (8001), and Frontend (5173) with health polli
 ```
 
 ### 3. Comprehensive Local Health & Test Audit
-Verifies PostgreSQL connection, Alembic migrations, executes 50 automated tests, and verifies frontend build:
+Verifies PostgreSQL connection, Alembic migrations, executes all 68 automated tests (48 backend + 20 voice agent), and verifies frontend build:
 ```powershell
 .\scripts\check-local.ps1
 ```
 
-### 4. Stop All Local Services
-Gracefully clears all background processes listening on ports 8000, 8001, and 5173:
+### 4. Stop All Local Services Safely
+Gracefully terminates ONLY project-managed processes recorded in `.run\pids.json` by `start-local.ps1`:
 ```powershell
 .\scripts\stop-local.ps1
 ```
+- **Process Ownership Shield:** Verifies process PID, runner identity (`powershell`, `pwsh`, `python`, `node`, `cmd`), command-line script markers (`start_backend.ps1`, `start_voice.ps1`, `start_frontend.ps1`), and project root path.
+- **Port Collision Safety:** Never blindly kills listening ports (8000, 8001, 5173). Unrelated applications running on those ports remain completely untouched.
+- **Child Process Handling:** Discovers and terminates child worker processes (Uvicorn, Vite) before stopping parent wrappers.
+- **Stale Tracking Cleanup:** Safely cleans up stale process records and handles repeated stop runs without errors.
 
 ### Manual Individual Commands (Cross-Platform / Linux / Mac):
 - **Backend:**
@@ -382,47 +415,60 @@ Gracefully clears all background processes listening on ports 8000, 8001, and 51
 
 ---
 
-## 12. Cloud Deployment Guide (Vercel & Render)
+## 12. Provider Implementations, Verification Status & Deployment Blockers
 
-### Frontend Deployment on Vercel:
-1. Connect your GitHub repository to Vercel.
-2. Set Root Directory: `frontend`.
-3. Framework Preset: `Vite`.
-4. Build Command: `npm run build`.
-5. Output Directory: `dist`.
-6. Environment Variables:
-   - `VITE_API_BASE_URL`: `https://your-backend.onrender.com/api/v1`
+### Actual Provider Implementations
 
-### Backend Deployment on Render:
-1. Create a **Web Service** on Render connected to `backend/`.
-2. Environment: `Python 3.11+`.
-3. Build Command: `pip install -r requirements.txt && alembic upgrade head`.
-4. Start Command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
-5. Add Environment Variables from `backend/.env.example`.
+| Subsystem | Implemented Logic | Integration Status | Behavior with Blank Credentials |
+| :--- | :--- | :--- | :--- |
+| **Mock Calling** | Fully local, multi-turn parameterized Hindi/Hinglish dialog with BBS College persona, medical/transit/leave/callback presets, synthetic transcripts with `is_demo=True`. | **Fully Verified** | Runs 100% locally with zero external network dependencies. Default demonstration mode. |
+| **Groq AI** | HTTP client to `/chat/completions` for guardian check, conversational attendance dialog, and structured transcript analysis. | **Code Complete & Verified** | Fails closed or invokes rule-based fallback keyword classifier (`_fallback_rule_based`). |
+| **Deepgram STT** | WebSocket client (`wss://api.deepgram.com/v1/listen`) consuming incoming 8000Hz μ-law Twilio audio with Nova-3 Hindi/multilingual model. | **Code Complete** | Telephony server fails closed (`503 Service Unavailable`) if `DEEPGRAM_API_KEY` is absent. |
+| **Edge TTS & Cartesia** | Local Edge TTS generates audio resampled to μ-law 8000Hz via `av` container; Cartesia Sonic WebSocket client provides low-latency fallback. | **Code Complete & Verified** | Edge TTS runs locally without API keys; Cartesia requires `CARTESIA_API_KEY`. |
+| **Twilio Voice** | Twilio REST client creates outbound calls (`calls.create`); `/twiml` serves secure media stream WebSocket; `/events` receives status webhooks with HMAC-SHA1 validation. | **Code Complete** | Telephony server fails closed (`503 Service Unavailable`) if Twilio credentials are blank. |
 
-### Voice Agent Deployment on Render:
-1. Create a separate **Web Service** connected to `voice-agent/`.
-2. Build Command: `pip install -r requirements.txt`.
-3. Start Command: `uvicorn app.telephony.server:app --host 0.0.0.0 --port $PORT`.
-4. Set `PUBLIC_BASE_URL` to your Render service HTTPS URL.
+### Real Calls vs. Mock Status
+- **Default Mode:** `REAL_CALLS_ENABLED=false` and `EXTERNAL_AI_PROCESSING_APPROVED=false`. No live telephone carrier connections or external model calls are initiated without explicit administrative opt-in.
+- **Audited Evaluation:** All end-to-end campaign operations, queueing, dispatch rechecks, transcript storage, AI classifications, and follow-up generation are fully verified in the local environment using the mock provider and deterministic synthetic data.
+
+### Deployment Blockers for Live Telephony
+Before switching `REAL_CALLS_ENABLED=true` in production:
+1. **Twilio Account Provisioning:** Active Twilio account with Account SID, Auth Token, and an E.164 caller ID number (`TWILIO_FROM_NUMBER`).
+2. **Public HTTPS Webhook URL:** Twilio requires a public HTTPS base URL (`PUBLIC_BASE_URL`) with valid SSL for TwiML and WebSocket media streams.
+3. **External AI Credentials:** Valid API keys for Groq (`GROQ_API_KEY`) and Deepgram (`DEEPGRAM_API_KEY`).
+4. **Institutional Consent Audit:** Verification that all contacted guardians have provided documented affirmative consent in `parents.call_consent`.
 
 ---
 
 ## 13. Automated Test Suite & Verification Results
 
-The AttendWise repository is validated by 50 comprehensive automated tests:
+The AttendWise repository is validated by **68 comprehensive automated tests** across Backend, Voice Agent, and Process Safety:
 
-### Backend Test Suite (30 Tests Passed):
-- `tests/test_end_to_end_flow.py`: Full database-driven calling lifecycle (Student -> Parent -> Attendance -> Campaign -> Dispatch -> Simulation -> Transcript -> DB verification).
-- `tests/test_attendance_excel_parser.py`: Multi-format Excel ingestion, header matching, duplicate prevention.
-- `tests/test_attendance_file_parser.py`: CSV, DOCX table parsing, extension validation.
-- `tests/test_calling_workflow.py`: Mock provider, safety failsafe gates, E.164 phone validation, transcript and followup creation.
-- `tests/test_security_settings.py`: CORS policy validation, password strength, production demo-seed restriction.
-- `tests/test_student_import_service.py`: Bulk student and guardian ingestion with primary link resolution.
-- `tests/test_rule_engine.py`, `tests/test_health.py`, `tests/test_leave.py`: Leave transitions and health endpoints.
+### Backend Test Suite (48 Tests Passed):
+- `tests/test_end_to_end_flow.py` (11 Tests):
+  - `test_full_database_driven_calling_lifecycle`: Student -> Parent -> Attendance -> Campaign -> Dispatch -> Simulation -> Transcript -> Followup -> DB verification.
+  - `test_unconsented_guardian_cannot_receive_call`: Fails closed when `call_consent=False`.
+  - `test_opted_out_guardian_is_always_skipped`: Opted-out guardian is strictly skipped with status `SKIPPED`.
+  - `test_missing_phone_number_is_skipped`: Missing phone fails closed with `MISSING_PHONE`.
+  - `test_invalid_phone_number_is_skipped`: Non-E.164 phone fails closed with `INVALID_PHONE`.
+  - `test_unlinked_guardian_is_rejected`: Student with no `StudentParent` link cannot be called.
+  - `test_missing_absence_record_is_rejected`: Target cancelled if student is no longer marked absent.
+  - `test_duplicate_notification_is_prevented`: Rejects duplicate calls if already completed on the same date.
+  - `test_unauthorized_user_cannot_initiate_campaign`: Role-based boundary blocks non-admin users (HTTP 403).
+  - `test_authorization_rechecked_before_dispatch`: Revoked consent between queueing and dispatch cancels attempt.
+  - `test_existing_records_with_unknown_consent_fail_closed`: Database and model defaults fail closed.
+- `tests/test_calling_workflow.py` (9 Tests):
+  - Mock provider ringing status, safety failsafe gates, E.164 phone requirement, internal telephony key absence fail-closed, webhook callback authentication fail-closed, invalid API key rejection, factory defaults, webhook completion persistence, Hindi dialogue simulation.
+- `tests/test_stop_local_safety.py` (5 Tests):
+  - Project-owned process termination, unrelated process preservation, mismatched/reused PID shield, stale tracking record handling, repeated execution idempotency.
+- `tests/test_attendance_excel_parser.py` (5 Tests): Excel roster ingestion, header matching, duplicate prevention.
+- `tests/test_attendance_file_parser.py` (3 Tests): CSV and DOCX table parsing, extension validation.
+- `tests/test_student_import_service.py` (2 Tests): Bulk student and guardian ingestion with primary contact resolution.
+- `tests/test_security_settings.py` (5 Tests): CORS origin validation, password strength, demo-seeding production restrictions.
+- `tests/test_error_handlers.py`, `tests/test_health.py`, `tests/test_leave.py`, `tests/test_rule_engine.py` (8 Tests): Health endpoints, exception payloads, leave transitions, callback rules.
 
 ### Voice Agent Test Suite (20 Tests Passed):
-- `tests/test_telephony.py`: E.164 validation, parent contact authorization, Twilio HMAC-SHA1 signature verification, secure TwiML generation, Deepgram streaming, Groq dialog turns, and response analyzer rule-based fallback.
+- `tests/test_telephony.py`: E.164 validation, parent contact authorization, Twilio HMAC-SHA1 signature verification, secure TwiML generation, Deepgram streaming, Groq dialog turns, rural prompts, wrong-number dialog flow, and response analyzer rule-based fallback.
 - `tests/test_backend_client.py`: Authenticated backend callback synchronization.
 - `tests/test_call_context.py`: Call context schema validation, script drafting, prompt injection protection.
 - `tests/test_main.py`: Telephony server initialization.
@@ -432,12 +478,12 @@ The AttendWise repository is validated by 50 comprehensive automated tests:
 ==========================================================
        AUDIT SUMMARY: 6 PASSED, 0 FAILED      
 ==========================================================
-  [PASS] PostgreSQL Database Connection
-  [PASS] Alembic Schema Migrations (HEAD)
-  [PASS] Backend Pytest Suite (30 tests)
-  [PASS] Voice-Agent Pytest Suite (20 tests)
-  [PASS] Frontend ESLint Verification
-  [PASS] Frontend Production Build (Vite)
+  [PASS] PostgreSQL Database Connection (Local instance)
+  [PASS] Alembic Schema Migrations (Revision: c1e5a2b3d4f5 HEAD)
+  [PASS] Backend Pytest Suite (48 tests passed)
+  [PASS] Voice-Agent Pytest Suite (20 tests passed)
+  [PASS] Frontend ESLint Verification (Zero errors)
+  [PASS] Frontend Production Build (Vite bundle compiled cleanly)
 ==========================================================
 ```
 

@@ -1,3 +1,4 @@
+import hmac
 from typing import Any
 from uuid import UUID
 import httpx
@@ -279,8 +280,13 @@ def telephony_call_completed_callback(
     Secure server-to-server webhook endpoint called by voice-agent when a call finishes.
     Persists call duration, transcript turns, AI response classification, and follow-ups.
     """
-    # Verify server-to-server key if configured
-    if settings.voice_agent_api_key and x_api_key != settings.voice_agent_api_key:
+    # Fail closed: internal authentication secret is required for server-to-server callbacks
+    if not settings.voice_agent_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Internal telephony authentication is not configured on the server",
+        )
+    if not x_api_key or not hmac.compare_digest(x_api_key, settings.voice_agent_api_key):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid callback API key")
 
     attempt = process_call_webhook_completion(db, payload)

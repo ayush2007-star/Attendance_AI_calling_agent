@@ -45,9 +45,11 @@ voice-agent/recordings/*.ogg
 .vscode/
 .idea/
 
-# Logs
+# Logs & runtime files
 *.log
 **/*.log
+.run/
+**/.run/
 
 # OS
 .DS_Store

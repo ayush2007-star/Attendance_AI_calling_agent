@@ -34,24 +34,40 @@ try {
 Write-Host "`n[2/6] Ensuring environment configuration files exist..." -ForegroundColor Yellow
 $backendEnv = Join-Path $root "backend\.env"
 $backendEnvEx = Join-Path $root "backend\.env.example"
-if (-not (Test-Path $backendEnv) -and (Test-Path $backendEnvEx)) {
-    Copy-Item $backendEnvEx $backendEnv
-    Write-Host "  Created backend\.env from template" -ForegroundColor Green
-} else {
-    Write-Host "  backend\.env verified" -ForegroundColor Green
-}
-
 $voiceEnv = Join-Path $root "voice-agent\.env"
 $voiceEnvEx = Join-Path $root "voice-agent\.env.example"
-if (-not (Test-Path $voiceEnv) -and (Test-Path $voiceEnvEx)) {
-    Copy-Item $voiceEnvEx $voiceEnv
-    Write-Host "  Created voice-agent\.env from template" -ForegroundColor Green
-} else {
-    Write-Host "  voice-agent\.env verified" -ForegroundColor Green
-}
-
 $frontEnv = Join-Path $root "frontend\.env"
 $frontEnvEx = Join-Path $root "frontend\.env.example"
+
+# Generate strong random secrets helper
+function New-RandomHexKey([int]$length = 32) {
+    $bytes = [byte[]]::new($length)
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    return -join ($bytes | ForEach-Object { "{0:x2}" -f $_ })
+}
+
+$sharedInternalApiKey = New-RandomHexKey 32
+
+if (-not (Test-Path $backendEnv) -and (Test-Path $backendEnvEx)) {
+    $jwtSecret = New-RandomHexKey 32
+    $content = Get-Content -Raw -Path $backendEnvEx
+    $content = $content -replace "JWT_SECRET_KEY=replace-with-a-long-random-secret", "JWT_SECRET_KEY=$jwtSecret"
+    $content = $content -replace "VOICE_AGENT_API_KEY=", "VOICE_AGENT_API_KEY=$sharedInternalApiKey"
+    $content | Set-Content -Path $backendEnv
+    Write-Host "  Created backend\.env with strong random secrets" -ForegroundColor Green
+} else {
+    Write-Host "  backend\.env preserved (existing credentials untouched)" -ForegroundColor Green
+}
+
+if (-not (Test-Path $voiceEnv) -and (Test-Path $voiceEnvEx)) {
+    $content = Get-Content -Raw -Path $voiceEnvEx
+    $content = $content -replace "CALL_API_KEY=", "CALL_API_KEY=$sharedInternalApiKey"
+    $content | Set-Content -Path $voiceEnv
+    Write-Host "  Created voice-agent\.env with synchronized internal API key" -ForegroundColor Green
+} else {
+    Write-Host "  voice-agent\.env preserved (existing credentials untouched)" -ForegroundColor Green
+}
+
 if (-not (Test-Path $frontEnv) -and (Test-Path $frontEnvEx)) {
     Copy-Item $frontEnvEx $frontEnv
     Write-Host "  Created frontend\.env from template" -ForegroundColor Green

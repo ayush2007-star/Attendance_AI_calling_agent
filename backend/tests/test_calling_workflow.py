@@ -61,7 +61,7 @@ def test_voice_agent_provider_requires_e164_format(monkeypatch) -> None:
     monkeypatch.setattr(settings, "real_calls_enabled", True)
     monkeypatch.setattr(settings, "external_ai_processing_approved", True)
 
-    provider = VoiceAgentCallingProvider()
+    provider = VoiceAgentCallingProvider(api_key="valid-test-key")
     req = CallRequest(
         attempt_id=uuid4(),
         campaign_id=uuid4(),
@@ -69,6 +69,64 @@ def test_voice_agent_provider_requires_e164_format(monkeypatch) -> None:
     )
     with pytest.raises(ValueError, match="Phone number must be E.164"):
         provider.start_call(req)
+
+
+def test_voice_agent_provider_fails_closed_when_internal_api_key_absent(monkeypatch) -> None:
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "real_calls_enabled", True)
+    monkeypatch.setattr(settings, "external_ai_processing_approved", True)
+    monkeypatch.setattr(settings, "voice_agent_api_key", "")
+
+    provider = VoiceAgentCallingProvider(api_key="")
+    req = CallRequest(
+        attempt_id=uuid4(),
+        campaign_id=uuid4(),
+        phone_number="+919876543210",
+    )
+    with pytest.raises(RuntimeError, match="Internal telephony authentication secret"):
+        provider.start_call(req)
+
+
+def test_telephony_callback_endpoint_fails_closed_when_secret_unconfigured(monkeypatch) -> None:
+    from fastapi import HTTPException
+    from app.core.config import settings
+    from app.api.v1.routes.calls import telephony_call_completed_callback
+
+    monkeypatch.setattr(settings, "voice_agent_api_key", "")
+
+    payload = CallCompletionPayload(
+        provider_call_id="CA-test",
+        status="COMPLETED",
+        duration_seconds=10,
+        turns=[],
+        analysis=None,
+    )
+    db = MagicMock()
+    with pytest.raises(HTTPException) as exc_info:
+        telephony_call_completed_callback(payload=payload, x_api_key="any-key", db=db)
+    assert exc_info.value.status_code == 503
+    assert "Internal telephony authentication is not configured" in exc_info.value.detail
+
+
+def test_telephony_callback_endpoint_rejects_invalid_api_key(monkeypatch) -> None:
+    from fastapi import HTTPException
+    from app.core.config import settings
+    from app.api.v1.routes.calls import telephony_call_completed_callback
+
+    monkeypatch.setattr(settings, "voice_agent_api_key", "correct-secret-key-1234")
+
+    payload = CallCompletionPayload(
+        provider_call_id="CA-test",
+        status="COMPLETED",
+        duration_seconds=10,
+        turns=[],
+        analysis=None,
+    )
+    db = MagicMock()
+    with pytest.raises(HTTPException) as exc_info:
+        telephony_call_completed_callback(payload=payload, x_api_key="wrong-key", db=db)
+    assert exc_info.value.status_code == 401
+    assert "Invalid callback API key" in exc_info.value.detail
 
 
 def test_calling_factory_defaults_to_mock(monkeypatch) -> None:

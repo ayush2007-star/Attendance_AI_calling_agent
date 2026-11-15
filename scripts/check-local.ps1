@@ -56,7 +56,7 @@ Push-Location (Join-Path $root "backend")
 try {
     $backendOut = & $backendPython -m pytest tests -q 2>&1
     if ($LASTEXITCODE -eq 0) {
-        Report-Step "Backend Pytest Suite (30 tests)" $true "All backend API, service, and parsing tests passed"
+        Report-Step "Backend Pytest Suite (48 tests)" $true "All backend API, security, consent, and lifecycle tests passed"
     } else {
         Report-Step "Backend Pytest Suite" $false $backendOut
     }
