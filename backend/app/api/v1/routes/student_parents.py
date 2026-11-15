@@ -26,4 +26,4 @@ def create_student_parent_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("student.create")),
 ):
-    return create_student_parent(db, data)
+    return create_student_parent(db, data, current_user)

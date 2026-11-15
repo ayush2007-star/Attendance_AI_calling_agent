@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -12,8 +12,14 @@ def authenticate_user(
     db: Session,
     data: LoginRequest,
 ) -> TokenResponse | None:
+    search_term = data.username.strip()
     result = db.execute(
-        select(User).where(User.username == data.username)
+        select(User).where(
+            or_(
+                func.lower(User.username) == search_term.lower(),
+                func.lower(User.email) == search_term.lower(),
+            )
+        )
     )
 
     user = result.scalar_one_or_none()

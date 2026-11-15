@@ -1,12 +1,12 @@
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class StudentParentCreate(BaseModel):
     student_id: UUID
     parent_id: UUID
-    relationship_type: str
+    relationship_type: str = Field(min_length=1, max_length=50)
     is_primary: bool = False
 
 

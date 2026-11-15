@@ -4,7 +4,7 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.absence import AbsenceEvent
@@ -103,7 +103,11 @@ def process_attendance_upload(
             )
 
     try:
-        parsed = parse_attendance_file(BytesIO(file_content), file_name)
+        parsed = parse_attendance_file(
+            BytesIO(file_content),
+            file_name,
+            reference_date=attendance_date,
+        )
     except (ValueError, OSError) as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -134,14 +138,28 @@ def process_attendance_upload(
 
     for row in parsed.rows:
         student_query = select(Student).where(
-            Student.student_code == row.student_code,
+            or_(
+                Student.student_code == row.student_code,
+                Student.roll_number == row.student_code,
+            ),
         )
         if selected_class is not None:
             student_query = student_query.where(
                 Student.class_id == selected_class.id,
             )
 
-        student = db.execute(student_query).scalar_one_or_none()
+        matching_students = list(db.scalars(student_query).all())
+        exact_student_code = next(
+            (
+                student
+                for student in matching_students
+                if student.student_code == row.student_code
+            ),
+            None,
+        )
+        student = exact_student_code or (
+            matching_students[0] if len(matching_students) == 1 else None
+        )
         if student is None:
             import_batch.invalid_rows += 1
             continue
@@ -155,7 +173,7 @@ def process_attendance_upload(
                 period_start=period_start,
                 period_end=period_end,
                 source_type=f"COLLEGE_{file_extension.removeprefix('.').upper()}",
-                calculation_method="COLLEGE_PROVIDED_TOTAL",
+                calculation_method=row.percentage_calculation_method,
             )
         )
 

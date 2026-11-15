@@ -1,16 +1,37 @@
-# React + Vite
+# Attendance dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This React/Vite application provides the college attendance dashboard. Sign-in,
+classes, students, attendance imports, dashboard summary, and campaign
+eligibility snapshots use the FastAPI backend. Campaign creation does not
+place calls.
 
-Currently, two official plugins are available:
+## Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+From this directory:
 
-## React Compiler
+```powershell
+npm ci
+npm run dev
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Vite prints the local development URL. Build and inspect the production bundle
+with:
 
-## Expanding the ESLint configuration
+```powershell
+npm run lint
+npm run build
+npm run preview
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+`npm run build` writes to `dist/`. There is currently no automated
+browser/component test script; the repository CI runs backend tests and
+frontend lint/build checks.
+
+## Integration boundary
+
+The backend is the source of truth for users, permissions, academic scope,
+students, attendance, campaigns, and calls. Do not treat frontend role
+checks or local state as authorization or persistence. See
+[`../docs/PROJECT_GUIDE.md`](../docs/PROJECT_GUIDE.md) and
+[`../docs/BACKEND_ARCHITECTURE_GUIDE.md`](../docs/BACKEND_ARCHITECTURE_GUIDE.md)
+before adding API calls or changing permission-sensitive screens.

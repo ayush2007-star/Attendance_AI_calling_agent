@@ -7,9 +7,15 @@ from sqlalchemy.orm import Session
 
 from app.integrations.ai.base import AIAnalyzer
 from app.models.ai_analysis import AIAnalysis
+from app.models.authorization import user_scopes
 from app.models.call_attempt import CallAttempt
+from app.models.campaign_target import CampaignTarget
+from app.models.campaign import CallCampaign
+from app.models.class_model import ClassModel
 from app.models.conversation import Conversation
+from app.models.student import Student
 from app.models.transcript import Transcript
+from app.models.user import User
 
 
 CALL_STATUS_TRANSITIONS = {
@@ -60,12 +66,26 @@ def update_call_status(
     db: Session,
     provider_call_id: str,
     new_status: str,
+    current_user: User,
 ) -> CallAttempt:
-    attempt = db.execute(
-        select(CallAttempt).where(
-            CallAttempt.provider_call_id == provider_call_id
+    query = select(CallAttempt).where(
+        CallAttempt.provider_call_id == provider_call_id
+    )
+    if current_user.role != "SUPER_ADMIN":
+        query = (
+            query.join(
+                CampaignTarget,
+                CampaignTarget.id == CallAttempt.campaign_target_id,
+            )
+            .join(Student, Student.id == CampaignTarget.student_id)
+            .join(ClassModel, ClassModel.id == Student.class_id)
+            .join(
+                user_scopes,
+                user_scopes.c.scope_id == ClassModel.scope_id,
+            )
+            .where(user_scopes.c.user_id == current_user.id)
         )
-    ).scalar_one_or_none()
+    attempt = db.execute(query).scalar_one_or_none()
     if attempt is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -83,8 +103,27 @@ def update_call_status(
         )
 
     attempt.status = normalized_status
-    if normalized_status in {"COMPLETED", "NO_ANSWER", "BUSY", "FAILED", "CANCELLED"}:
+    terminal_statuses = {
+        "COMPLETED",
+        "NO_ANSWER",
+        "BUSY",
+        "FAILED",
+        "CANCELLED",
+    }
+    if normalized_status in terminal_statuses:
         attempt.ended_at = datetime.now(timezone.utc)
+        if attempt.campaign_target_id is not None:
+            target = db.get(CampaignTarget, attempt.campaign_target_id)
+            campaign = db.get(CallCampaign, attempt.campaign_id)
+            if target is not None and campaign is not None:
+                if normalized_status == "COMPLETED":
+                    target.status = "COMPLETED"
+                    campaign.completed_calls += 1
+                elif normalized_status == "CANCELLED":
+                    target.status = "CANCELLED"
+                else:
+                    target.status = "FAILED"
+                    campaign.failed_calls += 1
     db.commit()
     db.refresh(attempt)
     return attempt

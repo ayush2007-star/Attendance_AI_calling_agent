@@ -1,29 +1,53 @@
-# Python
-__pycache__/
-*.py[cod]
+# Virtual environments
 .venv/
+**/.venv/
+venv/
+**/venv/
+env/
+**/env/
 
-# Environment
-.env
-.env.*
-!.env.example
+# Python cache & artifacts
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+**/.pytest_cache/
+.coverage
+htmlcov/
 
 # Node
 node_modules/
+**/node_modules/
 dist/
+**/dist/
 build/
+**/build/
+
+# Environment files
+.env
+.env.*
+*.env
+!.env.example
+!**/.env.example
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+
+# Recordings & Audio artifacts
+voice-agent/recordings/*.mp3
+voice-agent/recordings/*.wav
+voice-agent/recordings/*.ogg
 
 # IDE
 .vscode/
 .idea/
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
 # Logs
 *.log
+**/*.log
 
 # OS
 .DS_Store

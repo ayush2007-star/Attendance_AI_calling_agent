@@ -62,3 +62,25 @@ class Student(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="student",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def _primary_parent_link(self) -> "StudentParent | None":
+        return next(
+            (link for link in self.parent_links if link.is_primary),
+            None,
+        )
+
+    @property
+    def parent_name(self) -> str | None:
+        link = self._primary_parent_link
+        return link.parent.name if link else None
+
+    @property
+    def parent_phone(self) -> str | None:
+        link = self._primary_parent_link
+        return link.parent.primary_phone if link else None
+
+    @property
+    def relationship(self) -> str | None:
+        link = self._primary_parent_link
+        return link.relationship_type if link else None

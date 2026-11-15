@@ -20,6 +20,10 @@ Routes should remain thin. Services own business rules. Models own database stru
 ## Authorization
 
 JWT authentication identifies the user. The backend reloads the user from PostgreSQL and rejects missing, invalid, expired, or inactive credentials.
+`GET /api/v1/auth/me` returns the authenticated user's public profile for the
+frontend session. The initial `SUPER_ADMIN` is created interactively with
+`python -m app.bootstrap_admin` after migrations; this command only works while
+the database has zero users and never installs a default password.
 
 Permissions are stored in:
 
@@ -53,21 +57,22 @@ The reusable dependency is `require_permission(...)` in `app/api/dependencies.py
   -> import summary response
 ```
 
-The parser accepts Excel, CSV, PDF tables, and DOCX tables with variable date columns and preserves the college-provided `Tot.(%)` value. Date-wise records are still stored for reporting and future analytics. A summary stores the percentage, date period, source type, and import batch. Uploads are limited to 10 MB.
+The student master import accepts XLSX, XLS, or CSV with Roll Number and Name columns, and optional Student ID and primary guardian name/phone columns. Rows are validated, duplicates are skipped, and valid student/guardian records are saved within the selected class and user scope. The attendance parser accepts Excel, CSV, PDF tables, and DOCX tables with variable date columns. It matches either a saved student ID or roll number within the selected class, accepts yearless day/month headers using the selected attendance date's year, and preserves a supplied `Tot.(%)` value (or calculates it from marked dates when blank). Date-wise records are stored for reporting and future analytics. Uploads are limited to 10 MB.
 
 The parser does not infer approved leave from arbitrary attendance markers. Leave semantics must be implemented explicitly after the college policy is confirmed.
 
 ## Campaign Eligibility
 
-Campaign creation resolves the threshold from the request or `system_settings.attendance_threshold_default`. The threshold is copied into the campaign and every target.
+Campaign creation resolves the threshold from the request or `system_settings.attendance_threshold_default` and copies it into the campaign and every target for historical context.
 
 Eligibility is:
 
 ```text
-attendance_percentage < threshold_used
+attendance_records.status == "ABSENT"
+and attendance_records.attendance_date == campaign.attendance_date
 ```
 
-Each eligible student becomes a `campaign_targets` snapshot containing:
+Each student marked absent on that exact date becomes a `campaign_targets` snapshot containing:
 
 - attendance percentage used
 - threshold used
@@ -76,6 +81,8 @@ Each eligible student becomes a `campaign_targets` snapshot containing:
 - selected parent ID
 - selected phone number
 - target status
+
+The attendance percentage and threshold are informational snapshots; a low percentage alone does not add a student marked present. Creating a campaign does not place or dispatch calls.
 
 Later changes to attendance, contacts, or configuration do not rewrite historical target snapshots.
 
@@ -91,6 +98,8 @@ campaign_target
 ```
 
 The provider contract is in `app/integrations/calling/base.py`. Core campaign logic does not depend on Twilio, Exotel, Plivo, or another vendor. `dispatch_call()` requires an injected provider adapter and is not called directly from a normal request handler.
+
+The frontend's voice-studio call preview is scripted demo data. It does not dial or persist a `CallAttempt`, and absence of a saved guardian contact never substitutes a sample phone number. Live calls require a configured provider and explicit deployment approval.
 
 ## Conversations and AI
 
@@ -136,6 +145,16 @@ Later revisions are additive and currently include:
 
 Never rewrite the initial migration. Review generated SQL and inspect the live revision before applying a new migration.
 
+## Deployment and Health
+
+The root `deploy/compose.yml` runs the backend behind the unprivileged Nginx
+frontend proxy and keeps PostgreSQL private on the Compose network. Backend
+container startup applies migrations before serving traffic. `/health` is a
+liveness check; `/ready` verifies the database connection. Interactive API
+documentation is disabled when `ENVIRONMENT=production`. Configure
+`CORS_ALLOWED_ORIGINS` only when a separate trusted HTTPS frontend origin is
+needed; the included same-origin proxy needs no browser CORS exception.
+
 ## Validation Commands
 
 From `backend`:
@@ -147,16 +166,18 @@ From `backend`:
 .\.venv\Scripts\alembic.exe heads
 ```
 
-The active development environment uses Python 3.13.7 and `backend/.venv`.
+The development environment uses Python 3.13 and `backend/.venv`.
 
 ## Current Limitations
 
 - Attendance imports currently support `.xlsx`, `.xls`, `.csv`, `.pdf` tables, and `.docx` tables. Legacy binary `.doc` files are not supported.
 - Import files are parsed in the request path; large-scale production deployment should enqueue imports.
-- Provider adapters and real telecom credentials are intentionally not implemented.
+- Backend campaign dispatch does not yet integrate the separately implemented `voice-agent/` service; real telecom credentials and end-to-end call dispatch remain intentionally disabled until authorized parent-contact data can be supplied and verified.
 - Follow-up worker execution needs a long-running worker or queue deployment.
 - Leave policy, bulk student updates, reports with arbitrary filters, audit mutation hooks, and full integration fixtures remain to be implemented.
-- The current test suite focuses on parser and rule behavior; database-backed authorization and workflow integration tests should be expanded before production use.
+- The test suite covers parser/rule behavior, settings guards, and health. Database-backed authorization, UI/browser, and full workflow integration tests should be expanded before production use.
+- The frontend currently covers sign-in, classes, students, imports, dashboard summary, and campaign creation. Other API workflows are available in the development API docs but do not yet have frontend screens.
+- Production CORS origins are configured with `CORS_ALLOWED_ORIGINS`; wildcard and non-HTTPS origins are rejected when `ENVIRONMENT=production`. The Docker deployment uses same-origin frontend/API requests by default.
 
 ## Professor Explanation
 

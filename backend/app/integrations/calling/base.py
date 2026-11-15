@@ -1,6 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 
@@ -9,6 +9,7 @@ class CallRequest:
     attempt_id: UUID
     phone_number: str
     campaign_id: UUID
+    context: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

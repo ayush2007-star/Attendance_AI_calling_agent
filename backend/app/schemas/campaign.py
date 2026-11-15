@@ -32,3 +32,17 @@ class CampaignResponse(BaseModel):
     created_by: UUID
     started_at: datetime | None
     completed_at: datetime | None
+
+
+class CampaignTargetResponse(BaseModel):
+    id: UUID
+    student_id: UUID
+    student_code: str
+    roll_number: str
+    student_name: str
+    parent_name: str | None
+    phone_number: str | None
+    attendance_percentage: float
+    threshold: float
+    eligibility_reason: str
+    status: str

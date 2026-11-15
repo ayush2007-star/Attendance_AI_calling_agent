@@ -520,22 +520,35 @@ Scope: B.Tech
 A B.Tech Admin must not receive MBA records from backend APIs unless
 explicitly authorized.
 
+For this project, the Super Admin can access all college data. Department
+Admins are restricted to their assigned departments/classes. The backend
+must enforce these scopes on reads and writes; hiding UI controls is not
+authorization.
+
 ------------------------------------------------------------------------
 
 # 9. Student Data Architecture
 
-## Student master
+## Student onboarding and master
 
-Stable/basic information:
+Admins own student onboarding. They can add or edit one student at a time,
+or bulk-import student records using an approved spreadsheet template.
+Both paths must validate required fields and duplicate student IDs, apply
+the admin's academic scope, and record changes for audit. Students are not
+expected to create their own master records.
+
+The initial required student fields are:
 
 ``` text
-student_id
-name
+student_id / roll_number
+full_name
 student_mobile
-father_name
-father_mobile
-alternative_contact_number
-status
+course
+branch
+section / class
+year
+semester
+active_status
 ```
 
 ## Academic history
@@ -585,11 +598,18 @@ Important fields can include:
 ``` text
 student_id
 contact/person id
+name
 relationship
 phone
+preferred_language
 is_primary
 is_active
 ```
+
+The initial onboarding flow must capture at least one callable guardian
+phone number and support a primary and alternate contact. Initial
+voice-agent language support is Hindi, Hinglish, and English; match the
+parent's language when possible.
 
 If a phone number changes:
 
@@ -739,6 +759,12 @@ Admin may configure:
 85%
 ```
 
+For the first demo, 75% is provisional only. Confirm the official
+threshold, comparison rule, and approved-leave treatment with the college
+before production use; do not silently treat the provisional value as
+policy. Until then, use the uploaded attendance percentage as provided,
+apply no leave-based adjustment, and do not enable production auto-calls.
+
 Campaign creation can use the applicable configured threshold.
 
 Eligibility:
@@ -865,8 +891,17 @@ Contact validation
       ↓
 Preview
       ↓
-Confirm
+Admin approval
+      ↓
+Start campaign
 ```
+
+Calls must not start automatically before an admin reviews and approves
+the target preview. The first demo uses the local/mock calling provider;
+the real telecom provider remains undecided. Missing or invalid guardian
+numbers require a warning/manual review and must never be auto-called.
+Retries and automatic calling remain disabled until college policy is
+confirmed.
 
 ## Campaign target snapshot
 
@@ -954,6 +989,36 @@ Example conceptual request:
 The actual production contract should minimize personal data and be
 finalized before integration.
 
+Only supply the name, student code, attendance facts, and language needed
+for the conversation. Do not send phone numbers or unrelated contact
+details as model instructions. The agent should support Hindi, Hinglish,
+and English, and match the parent's language when possible.
+
+Voice quality requirements for the first version:
+
+-   Neutral Indian Hindi/Hinglish; respond in simple English if the parent
+    speaks English.
+-   Clear, calm, warm conversational delivery with natural pauses and
+    concise sentences; no blame, pressure, or robotic/formal phrasing.
+-   Confirm guardian identity before discussing attendance.
+-   On a wrong number, apologize and end without disclosing student data.
+-   Acknowledge leave/medical explanations without making policy decisions.
+-   Ask once for repetition when speech is unclear; never guess a response,
+    agreement, or callback time.
+-   Ask once whether Hindi or English is preferred if the language is
+    unclear.
+-   Evaluate sample voices with the owner and 1-2 Hindi/Hinglish speakers
+    for intelligibility, naturalness, politeness, and pronunciation of
+    names/numbers/dates. Measure response latency during the same tests;
+    agree any numeric acceptance target after the initial benchmark.
+
+The voice-agent prompt includes an editable Hindi/Hinglish and English
+example script in `voice-agent/app/agent/draft_script.py`. This is a
+synthetic demo draft, not college-approved wording. The phrase
+"main record karunga/karungi; college team confirm karegi" means noting the
+parent's concern for college review; it must not imply audio recording or
+that a callback/leave/attendance change has been approved.
+
 Voice Agent returns structured events/results such as:
 
 ``` json
@@ -967,6 +1032,36 @@ Voice Agent returns structured events/results such as:
 ```
 
 Do not make the Voice Agent responsible for database authorization.
+
+### Local synthetic voice-agent smoke test
+
+The local realtime demo uses only synthetic student/guardian data and the
+computer microphone/speakers in a continuous, full-duplex session. It
+streams microphone audio and synthetic conversation context to the
+configured cloud AI provider, but does **not** load real backend records,
+place a phone call, save microphone audio locally, or persist call results.
+Do not speak real student or parent information. Provider-side data
+handling is governed by the provider's account and API terms; real student
+data must not be sent unless the institution approves the provider.
+Semantic VAD lets the parent finish speaking naturally and supports
+interrupting the agent; local audio uses 24 kHz mono PCM16.
+Use headphones for the local demo: acoustic echo cancellation is not
+implemented, so open speakers can feed the agent's voice back into the
+microphone.
+
+```powershell
+cd voice-agent
+Copy-Item .env.example .env
+```
+
+Set `OPENAI_API_KEY` in `voice-agent/.env`, then run:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.main
+```
+
+This test requires a microphone/speaker and an account authorized for the
+configured realtime API.
 
 ------------------------------------------------------------------------
 
@@ -1047,6 +1142,11 @@ Call
 
 The AI cannot bypass this rule.
 
+For the first demo, capture a callback request and its parent-provided
+date/time/timezone for the backend to validate. Do not tell the parent a
+callback is booked until the backend confirms it. Retry counts and quiet
+hours are not yet specified.
+
 Support:
 
 -   date
@@ -1057,6 +1157,13 @@ Support:
 -   status
 -   retry count
 -   cancellation
+
+The institution has not yet decided whether calls are recorded, how long
+recordings/transcripts are retained, or what consent flow applies. Do not
+enable call recording or set a production retention period until those
+privacy requirements are confirmed. Until then, cloud AI tests must use
+synthetic data only; real student/parent data must not be sent to an
+external AI provider.
 
 ------------------------------------------------------------------------
 
@@ -1809,27 +1916,29 @@ When college Excel is available:
 -   implement parser
 -   validation tests
 
-### Phase 3 --- Backend
+### Phase 3 --- Voice Agent
 
--   migrations
--   models
--   schemas
--   services
--   APIs
--   permissions
--   tests
+-   implement the provider-independent conversation flow
+-   use the backend call-context contract
+-   return structured call outcomes and transcripts
+-   test callback, no-response, wrong-number, and provider-failure handling
 
-### Phase 4 --- Frontend
+### Phase 4 --- ML
 
-Build against stable APIs.
+-   inspect available real call and attendance outcomes
+-   do not invent training data
+-   start with a documented rule-based baseline if there is not enough data
+-   version and evaluate any model before allowing recommendations
 
-### Phase 5 --- Voice Agent
+### Phase 5 --- Backend
 
-Integrate through the calling/voice-agent contract.
+-   update models, schemas, APIs, permissions, and migrations for voice and ML
+-   keep backend as the only owner of the production database
+-   add integration tests for complete workflows
 
-### Phase 6 --- ML
+### Phase 6 --- Frontend
 
-Integrate prediction service after enough usable historical data exists.
+Build against tested backend APIs and remove mock behavior from the demo flow.
 
 ### Phase 7 --- Production testing/deployment
 

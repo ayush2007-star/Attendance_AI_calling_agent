@@ -20,13 +20,16 @@ class FollowupCreate(BaseModel):
 
 class FollowupResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-
     id: UUID
     student_id: UUID
+    student_name: str | None = None
+    roll_number: str | None = None
     conversation_id: UUID | None
     campaign_id: UUID | None
     campaign_target_id: UUID | None
     parent_id: UUID | None
+    parent_name: str | None = None
+    parent_phone: str | None = None
     reason: str
     priority: str
     status: str
@@ -35,3 +38,8 @@ class FollowupResponse(BaseModel):
     timezone_name: str
     retry_count: int
     completed_at: datetime | None
+
+
+class FollowupStatusUpdate(BaseModel):
+    status: str
+    notes: str | None = None

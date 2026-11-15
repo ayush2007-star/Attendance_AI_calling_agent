@@ -108,6 +108,104 @@ def cancel_followup(db: Session, followup_id: UUID) -> Followup:
     return _set_terminal_status(db, followup_id, "CANCELLED")
 
 
+def list_followups(
+    db: Session,
+    current_user: User,
+    status_filter: str | None = None,
+    priority_filter: str | None = None,
+    student_id: UUID | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict]:
+    from app.models.student import Student
+    from app.models.parent import Parent
+    from app.models.class_model import ClassModel
+    from app.models.authorization import user_scopes
+    from sqlalchemy import desc
+
+    query = (
+        select(Followup, Student, Parent)
+        .join(Student, Student.id == Followup.student_id)
+        .outerjoin(Parent, Parent.id == Followup.parent_id)
+        .order_by(desc(Followup.created_at))
+    )
+
+    if current_user.role != "SUPER_ADMIN":
+        query = (
+            query.join(ClassModel, ClassModel.id == Student.class_id)
+            .join(user_scopes, user_scopes.c.scope_id == ClassModel.scope_id)
+            .where(user_scopes.c.user_id == current_user.id)
+        )
+
+    if status_filter:
+        query = query.where(Followup.status == status_filter.upper())
+    if priority_filter:
+        query = query.where(Followup.priority == priority_filter.upper())
+    if student_id:
+        query = query.where(Followup.student_id == student_id)
+
+    rows = db.execute(query.offset(offset).limit(limit)).all()
+    results = []
+    for f, student, parent in rows:
+        results.append(
+            {
+                "id": f.id,
+                "student_id": f.student_id,
+                "student_name": f"{student.first_name} {student.last_name or ''}".strip(),
+                "roll_number": student.roll_number,
+                "conversation_id": f.conversation_id,
+                "campaign_id": f.campaign_id,
+                "campaign_target_id": f.campaign_target_id,
+                "parent_id": f.parent_id,
+                "parent_name": parent.name if parent else "Guardian",
+                "parent_phone": parent.primary_phone if parent else None,
+                "reason": f.reason,
+                "priority": f.priority,
+                "status": f.status,
+                "due_at": f.due_at,
+                "scheduled_for": f.scheduled_for,
+                "timezone_name": f.timezone_name,
+                "retry_count": f.retry_count,
+                "completed_at": f.completed_at,
+            }
+        )
+    return results
+
+
+def update_followup_status(
+    db: Session,
+    followup_id: UUID,
+    new_status: str,
+    current_user: User,
+) -> Followup:
+    followup = db.get(Followup, followup_id)
+    if followup is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Follow-up not found",
+        )
+
+    normalized = new_status.upper()
+    if normalized == "COMPLETED":
+        return complete_followup(db, followup_id)
+    if normalized == "CANCELLED":
+        return cancel_followup(db, followup_id)
+    if normalized == "IN_PROGRESS":
+        followup.status = "IN_PROGRESS"
+    elif normalized in ("SCHEDULED", "DUE", "PENDING"):
+        followup.status = normalized
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown follow-up status: {new_status}",
+        )
+
+    db.commit()
+    db.refresh(followup)
+    return followup
+
+
+
 def _set_terminal_status(
     db: Session,
     followup_id: UUID,

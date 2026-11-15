@@ -52,6 +52,7 @@ class ParsedAttendanceRow:
     student_name: str | None
     attendance_by_date: dict[date, str]
     college_percentage: float | None
+    percentage_calculation_method: str
 
 
 @dataclass
@@ -65,11 +66,17 @@ class AttendanceImportSummary:
     errors: list[str] = field(default_factory=list)
 
 
-def parse_attendance_workbook(file: BinaryIO) -> AttendanceImportSummary:
+def parse_attendance_workbook(
+    file: BinaryIO,
+    reference_date: date | None = None,
+) -> AttendanceImportSummary:
     workbook = load_workbook(file, read_only=True, data_only=True)
     try:
         worksheet = workbook.active
-        header_row_number, headers = _find_header_row(worksheet)
+        header_row_number, headers = _find_header_row(
+            worksheet,
+            reference_date,
+        )
         if header_row_number is None:
             return AttendanceImportSummary(
                 errors=[
@@ -82,7 +89,10 @@ def parse_attendance_workbook(file: BinaryIO) -> AttendanceImportSummary:
             headers,
             PERCENTAGE_HEADER_ALIASES,
         )
-        date_columns, invalid_date_headers = _find_date_columns(headers)
+        date_columns, invalid_date_headers = _find_date_columns(
+            headers,
+            reference_date,
+        )
 
         summary = AttendanceImportSummary()
         summary.warnings.extend(
@@ -126,21 +136,50 @@ def parse_attendance_workbook(file: BinaryIO) -> AttendanceImportSummary:
                 percentage, percentage_error = _parse_percentage(
                     values[percentage_column]
                 )
-                if percentage_error:
+                if percentage_error and "missing" not in percentage_error:
                     row_errors.append(percentage_error)
-            else:
+            percentage_calculation_method = (
+                "COLLEGE_PROVIDED_TOTAL" if percentage is not None else "DATE_WISE_MARKED_DAYS"
+            )
+            if percentage is None:
                 summary.warnings.append(
-                    "Tot.(%) column was not provided; percentage fallback is required"
+                    "Attendance percentage was calculated from date-wise values"
                 )
 
             attendance_by_date: dict[date, str] = {}
             for attendance_date, column_index in date_columns.items():
                 value = _clean_text(values[column_index])
                 if value:
-                    attendance_by_date[attendance_date] = value
+                    normalized = _normalize_attendance_status(value)
+                    if normalized is None:
+                        row_errors.append(
+                            f"invalid attendance status for {attendance_date}: {value}"
+                        )
+                    else:
+                        attendance_by_date[attendance_date] = normalized
 
             if not attendance_by_date:
                 row_errors.append("no date-wise attendance values")
+
+            if percentage is None and attendance_by_date:
+                marked_values = list(attendance_by_date.values())
+                counted_days = sum(
+                    value in {"PRESENT", "ABSENT", "LATE"}
+                    for value in marked_values
+                )
+                if counted_days:
+                    present_days = sum(
+                        value in {"PRESENT", "LATE"}
+                        for value in marked_values
+                    )
+                    percentage = round(
+                        present_days / counted_days * 100,
+                        2,
+                    )
+                else:
+                    row_errors.append(
+                        "cannot calculate total attendance percentage from marked days"
+                    )
 
             if row_errors:
                 summary.invalid_rows += 1
@@ -157,6 +196,7 @@ def parse_attendance_workbook(file: BinaryIO) -> AttendanceImportSummary:
                     student_name=student_name,
                     attendance_by_date=attendance_by_date,
                     college_percentage=percentage,
+                    percentage_calculation_method=percentage_calculation_method,
                 )
             )
             summary.valid_rows += 1
@@ -166,14 +206,20 @@ def parse_attendance_workbook(file: BinaryIO) -> AttendanceImportSummary:
         workbook.close()
 
 
-def _find_header_row(worksheet: Any) -> tuple[int | None, list[str]]:
+def _find_header_row(
+    worksheet: Any,
+    reference_date: date | None,
+) -> tuple[int | None, list[str]]:
     for row_number, values in enumerate(
         worksheet.iter_rows(min_row=1, max_row=20, values_only=True),
         start=1,
     ):
         headers = [_normalize_header(value) for value in values]
         has_id = any(header in ID_HEADER_ALIASES for header in headers)
-        has_date = any(_parse_date(value) is not None for value in values)
+        has_date = any(
+            _parse_date(value, reference_date) is not None
+            for value in values
+        )
         if has_id and has_date:
             return row_number, headers
     return None, []
@@ -188,11 +234,12 @@ def _find_column(headers: list[str], aliases: set[str]) -> int | None:
 
 def _find_date_columns(
     headers: list[str],
+    reference_date: date | None,
 ) -> tuple[dict[date, int], list[str]]:
     date_columns: dict[date, int] = {}
     invalid_date_headers: list[str] = []
     for index, header in enumerate(headers):
-        parsed_date = _parse_date(header)
+        parsed_date = _parse_date(header, reference_date)
         if parsed_date is not None:
             if parsed_date in date_columns:
                 invalid_date_headers.append(header)
@@ -203,7 +250,10 @@ def _find_date_columns(
     return date_columns, invalid_date_headers
 
 
-def _parse_date(value: Any) -> date | None:
+def _parse_date(
+    value: Any,
+    reference_date: date | None = None,
+) -> date | None:
     if isinstance(value, datetime):
         return value.date()
     if isinstance(value, date):
@@ -212,6 +262,12 @@ def _parse_date(value: Any) -> date | None:
         return None
 
     text = value.strip()
+    numeric_date = re.fullmatch(r"(\d{4})-(\d{1,2})-(\d{1,2})", text)
+    if numeric_date:
+        try:
+            return date(*(int(part) for part in numeric_date.groups()))
+        except ValueError:
+            return None
     try:
         return datetime.fromisoformat(text).date()
     except ValueError:
@@ -222,7 +278,31 @@ def _parse_date(value: Any) -> date | None:
             return datetime.strptime(text, date_format).date()
         except ValueError:
             continue
+
+    if reference_date is not None:
+        for date_format in ("%d %b %Y", "%d %B %Y", "%b %d %Y", "%B %d %Y"):
+            try:
+                return datetime.strptime(
+                    f"{text} {reference_date.year}",
+                    date_format,
+                ).date()
+            except ValueError:
+                continue
     return None
+
+
+def _normalize_attendance_status(value: str) -> str | None:
+    normalized = value.strip().upper()
+    return {
+        "P": "PRESENT",
+        "PRESENT": "PRESENT",
+        "A": "ABSENT",
+        "ABSENT": "ABSENT",
+        "L": "LATE",
+        "LATE": "LATE",
+        "E": "EXCUSED",
+        "EXCUSED": "EXCUSED",
+    }.get(normalized)
 
 
 def _parse_percentage(value: Any) -> tuple[float | None, str | None]:

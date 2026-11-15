@@ -14,7 +14,6 @@ class Transcriber:
         print("✅ Speech recognition model loaded.")
 
     def transcribe(self, audio_file: str) -> str:
-
         segments, info = self.model.transcribe(
             audio_file,
             language="hi",

@@ -16,8 +16,8 @@ def test_parser_accepts_csv() -> None:
 
     assert summary.valid_rows == 1
     assert summary.rows[0].attendance_by_date == {
-        date(2026, 9, 1): "P",
-        date(2026, 9, 2): "A",
+        date(2026, 9, 1): "PRESENT",
+        date(2026, 9, 2): "ABSENT",
     }
 
 

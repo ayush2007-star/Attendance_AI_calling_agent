@@ -1,5 +1,4 @@
 from uuid import UUID
-
 from pydantic import BaseModel, ConfigDict
 
 
@@ -11,6 +10,10 @@ class StudentCreate(BaseModel):
     class_id: UUID
     email: str | None = None
     is_active: bool = True
+    parent_name: str | None = None
+    parent_phone: str | None = None
+    relationship: str | None = "Father"
+    parent_email: str | None = None
 
 
 class StudentResponse(BaseModel):
@@ -24,3 +27,6 @@ class StudentResponse(BaseModel):
     class_id: UUID
     email: str | None
     is_active: bool
+    parent_name: str | None = None
+    parent_phone: str | None = None
+    relationship: str | None = None

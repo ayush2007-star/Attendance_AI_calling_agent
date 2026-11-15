@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -56,6 +56,12 @@ class CampaignTarget(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     selected_phone_number: Mapped[str | None] = mapped_column(
         String(30),
         nullable=True,
+    )
+
+    contact_authorized: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
     )
 
     __table_args__ = (

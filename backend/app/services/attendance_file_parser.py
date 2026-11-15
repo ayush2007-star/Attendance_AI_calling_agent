@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from datetime import date
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any, BinaryIO
@@ -22,6 +23,7 @@ SUPPORTED_ATTENDANCE_EXTENSIONS = {".xlsx", ".xls", ".csv", ".pdf", ".docx"}
 def parse_attendance_file(
     file: BinaryIO,
     file_name: str,
+    reference_date: date | None = None,
 ) -> AttendanceImportSummary:
     extension = Path(file_name).suffix.lower()
     if extension not in SUPPORTED_ATTENDANCE_EXTENSIONS:
@@ -31,21 +33,25 @@ def parse_attendance_file(
         )
 
     if extension == ".xlsx":
-        return parse_attendance_workbook(file)
+        return parse_attendance_workbook(file, reference_date)
     if extension == ".xls":
-        return _parse_legacy_excel(file)
+        return _parse_legacy_excel(file, reference_date)
     if extension == ".csv":
-        return _parse_rows(_read_csv(file))
+        return _parse_rows(_read_csv(file), reference_date)
     if extension == ".pdf":
-        return _parse_rows(_read_pdf_tables(file))
-    return _parse_rows(_read_docx_tables(file))
+        return _parse_rows(_read_pdf_tables(file), reference_date)
+    return _parse_rows(_read_docx_tables(file), reference_date)
 
 
-def _parse_legacy_excel(file: BinaryIO) -> AttendanceImportSummary:
+def _parse_legacy_excel(
+    file: BinaryIO,
+    reference_date: date | None,
+) -> AttendanceImportSummary:
     workbook = xlrd.open_workbook(file_contents=file.read())
     sheet = workbook.sheet_by_index(0)
     return _parse_rows(
-        [sheet.row_values(row_number) for row_number in range(sheet.nrows)]
+        [sheet.row_values(row_number) for row_number in range(sheet.nrows)],
+        reference_date,
     )
 
 
@@ -75,7 +81,10 @@ def _read_docx_tables(file: BinaryIO) -> list[list[Any]]:
     return rows
 
 
-def _parse_rows(rows: list[list[Any]]) -> AttendanceImportSummary:
+def _parse_rows(
+    rows: list[list[Any]],
+    reference_date: date | None,
+) -> AttendanceImportSummary:
     workbook = Workbook()
     worksheet = workbook.active
     for row in rows:
@@ -84,4 +93,4 @@ def _parse_rows(rows: list[list[Any]]) -> AttendanceImportSummary:
     stream = BytesIO()
     workbook.save(stream)
     stream.seek(0)
-    return parse_attendance_workbook(stream)
+    return parse_attendance_workbook(stream, reference_date)

@@ -2,17 +2,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    openai_api_key: str
-
     backend_base_url: str = "http://127.0.0.1:8000"
 
     voice_agent_env: str = "development"
-
-    realtime_model: str = "gpt-realtime-2.1"
-
-    transcription_model: str = "gpt-4o-mini-transcribe"
-
-    voice: str = "ash"
 
     model_config = SettingsConfigDict(
         env_file=".env",

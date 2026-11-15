@@ -41,6 +41,18 @@ class Parent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=True,
     )
 
+    call_consent: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+
+    call_opt_out: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
     student_links: Mapped[list["StudentParent"]] = relationship(
         back_populates="parent",
         cascade="all, delete-orphan",
