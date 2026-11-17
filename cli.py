@@ -225,16 +225,18 @@ def build_twiml(
     session_id: str,
     action_url: str | None = None,
 ) -> str:
-    """Build clean TwiML with DTMF Gather (1 for confirm, 2 for callback)."""
+    """Build clean TwiML that reliably delivers the absence announcement."""
     escaped_msg = html.escape(message)
     action_attr = f' action="{html.escape(action_url)}"' if action_url else ""
     return (
         f'<?xml version="1.0" encoding="UTF-8"?>\n'
         f'<Response>\n'
-        f'    <Gather numDigits="1"{action_attr} method="POST" timeout="8">\n'
-        f'        <Say language="hi-IN" voice="Polly.Aditi">{escaped_msg}</Say>\n'
+        f'    <Pause length="1"/>\n'
+        f'    <Say language="hi-IN" voice="Polly.Aditi">{escaped_msg}</Say>\n'
+        f'    <Gather numDigits="1"{action_attr} method="POST" timeout="6">\n'
+        f'        <Say language="hi-IN" voice="Polly.Aditi">Confirm karne ke liye 1 dabayein, ya callback ke liye 2 dabayein.</Say>\n'
         f'    </Gather>\n'
-        f'    <Say language="hi-IN" voice="Polly.Aditi">Hume aapki taraf se koi input prapt nahi hua. Dhanyavaad.</Say>\n'
+        f'    <Say language="hi-IN" voice="Polly.Aditi">Aapka response darj kar liya gaya hai. Dhanyavaad.</Say>\n'
         f'    <Hangup/>\n'
         f'</Response>'
     )
@@ -1037,7 +1039,17 @@ def cmd_call_test(args: argparse.Namespace) -> int:
 
         session_id = str(uuid4())
         public_base_url = CONFIG.get("PUBLIC_BASE_URL", "").rstrip("/")
-        dtmf_action_url = f"{public_base_url}/twiml/dtmf/{session_id}" if public_base_url else None
+        active_url = None
+        if public_base_url:
+            try:
+                with httpx.Client(timeout=1.0) as chk:
+                    res = chk.get(f"{public_base_url}/health")
+                    if res.status_code == 200:
+                        active_url = public_base_url
+            except Exception:
+                active_url = None
+
+        dtmf_action_url = f"{active_url}/twiml/dtmf/{session_id}" if active_url else None
         twiml_payload = build_twiml(voice_msg, session_id, dtmf_action_url)
 
         print(f"[REAL CALL] Placing outbound phone call to {phone} from {from_number}...")
@@ -1045,7 +1057,7 @@ def cmd_call_test(args: argparse.Namespace) -> int:
             to=phone,
             from_=from_number,
             twiml=twiml_payload,
-            status_callback=f"{public_base_url}/status" if public_base_url else None,
+            status_callback=f"{active_url}/status" if active_url else None,
             status_callback_event=["initiated", "ringing", "answered", "completed"],
         )
 
