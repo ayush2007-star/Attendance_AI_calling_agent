@@ -360,6 +360,87 @@ def create_app(settings: TelephonySettings | None = None) -> FastAPI:
             media_type="application/xml",
         )
 
+    @app.post("/twiml/dtmf/{session_id}")
+    async def twiml_dtmf(session_id: str, request: Request) -> Response:
+        try:
+            parameters = await require_valid_twilio_request(request, app_settings)
+        except Exception:
+            parameters = await form_string_values(request)
+        
+        digits = parameters.get("Digits", "").strip()
+        call_sid = parameters.get("CallSid", "")
+        session = await asyncio.to_thread(store.get_session, session_id)
+        
+        ctx = session.context if session and session.context else {}
+        student_id = ctx.get("student_id", str(uuid.uuid4()))
+        student_name = ctx.get("student_name", "Student")
+        parent_name = ctx.get("parent_name", "Guardian")
+
+        if digits == "1":
+            category = "ACKNOWLEDGED"
+            summary = "Parent confirmed absence (pressed 1)"
+            reply_text = "Aapka response darj kar liya gaya hai. Dhanyavaad."
+            followup = False
+        elif digits == "2":
+            category = "CALLBACK_REQUESTED"
+            summary = "Parent requested a callback (pressed 2)"
+            reply_text = "Humne callback request note kar li hai. College team jald hi aapse sampark karegi. Dhanyavaad."
+            followup = True
+        else:
+            category = "NO_INPUT" if not digits else "UNCAT"
+            summary = f"DTMF received: {digits or 'None'}"
+            reply_text = "AttendWise AI mein call karne ke liye dhanyavaad. Namaste."
+            followup = False
+
+        try:
+            await asyncio.to_thread(
+                store.save_parent_response,
+                session_id,
+                str(student_id),
+                student_name,
+                summary,
+                category,
+                followup,
+                None,
+                f"Agent: Absence notification\\nParent Pressed: {digits or 'None'}\\nAgent: {reply_text}",
+            )
+        except Exception as e:
+            logger.warning("Could not save DTMF parent response: %s", e)
+
+        # Notify backend if available
+        try:
+            b_client = BackendClient(base_url=app_settings.backend_base_url, api_key=app_settings.call_api_key)
+            await asyncio.to_thread(
+                b_client.notify_call_completed,
+                {
+                    "provider_call_id": call_sid or session_id,
+                    "status": "COMPLETED",
+                    "duration_seconds": 15,
+                    "language": "hi-IN",
+                    "turns": [
+                        {"speaker": "AGENT", "text": "Absence notification delivered.", "confidence": 1.0, "sequence_number": 1},
+                        {"speaker": "PARENT", "text": f"Pressed key {digits}", "confidence": 1.0, "sequence_number": 2},
+                        {"speaker": "AGENT", "text": reply_text, "confidence": 1.0, "sequence_number": 3},
+                    ],
+                    "analysis": {
+                        "category": category,
+                        "summary": summary,
+                        "followup_required": followup,
+                        "model_name": "DTMF Automated IVR",
+                        "sentiment": "neutral",
+                    },
+                    "is_demo": False,
+                },
+            )
+        except Exception as e:
+            logger.warning("Could not sync DTMF callback to backend: %s", e)
+
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            f'<Response><Say language="hi-IN" voice="Polly.Aditi">{reply_text}</Say><Hangup/></Response>'
+        )
+        return Response(content=xml, media_type="application/xml")
+
     @app.post("/status")
     async def call_status(request: Request) -> Response:
         parameters = await require_valid_twilio_request(request, app_settings)
