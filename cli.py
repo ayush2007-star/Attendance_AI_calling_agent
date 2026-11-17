@@ -177,11 +177,11 @@ def generate_absence_message(
     if groq_api_key:
         try:
             prompt = (
-                f"You are the voice calling assistant of {school} named AttendWise AI. "
-                f"Generate a polite, concise Hindi absence notification for parent '{parent_name}' "
-                f"regarding student '{student_name}' who was marked absent on {attendance_date}. "
+                f"You are the voice calling assistant of {school}. "
+                f"Generate a polite, concise Hindi absence notification for parent '{parent_name}'. "
+                f"Explicitly inform them: 'Aapka bachcha {student_name} aaj college nahi aaya hai.' "
                 f"Instruct the parent: 'Upasthiti confirm karne ke liye 1 dabayein, ya callback ke liye 2 dabayein.' "
-                f"Keep it under 35 words. Return ONLY the spoken Hindi text without quotes."
+                f"Keep it natural and under 30 words. Return ONLY the spoken Hindi text without quotes."
             )
             with httpx.Client(timeout=8.0) as client:
                 resp = client.post(
@@ -214,7 +214,7 @@ def generate_absence_message(
     else:
         text_msg = (
             f"नमस्ते {parent_name} जी, मैं {school} से AttendWise AI बोल रहा हूँ। "
-            f"आज {student_name} की कॉलेज उपस्थिति अनुपस्थित दर्ज की गई है। "
+            f"आपका बच्चा {student_name} आज कॉलेज नहीं आया है। "
             f"उपस्थिति कन्फर्म करने के लिए 1 दबाएं, या कॉलबैक के लिए 2 दबाएं। धन्यवाद।"
         )
     return (text_msg, "Template Fallback")
